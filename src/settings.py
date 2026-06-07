@@ -44,8 +44,13 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True, slots=True)
 class Settings:
     bot_token: str
-    bot_username: str
     admin_ids: frozenset[int]
+    bot_username: str = ""
+    bot_id: int | None = None
+    bot_name: str = ""
+    bot_can_join_groups: bool | None = None
+    bot_can_read_all_group_messages: bool | None = None
+    bot_supports_inline_queries: bool | None = None
     database_url: str = "sqlite+aiosqlite:///./data/bot.db"
     required_channel_ids: tuple[int | str, ...] = ()
     referral_reward_points: int = 1
@@ -59,13 +64,11 @@ class Settings:
             raise ValueError("BOT_TOKEN is required")
 
         bot_username = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
-        if require_bot_token and not bot_username:
-            raise ValueError("BOT_USERNAME is required")
 
         return cls(
             bot_token=bot_token,
-            bot_username=bot_username,
             admin_ids=_parse_ints(os.getenv("ADMIN_IDS")),
+            bot_username=bot_username,
             database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db").strip(),
             required_channel_ids=_parse_channel_ids(os.getenv("REQUIRED_CHANNEL_IDS")),
             referral_reward_points=_env_int("REFERRAL_REWARD_POINTS", 1),

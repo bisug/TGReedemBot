@@ -23,7 +23,7 @@ python -m pip install -e .
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with your bot token, bot username, admin Telegram IDs, and required channels.
+Edit `.env` with your bot token, admin Telegram IDs, and required channels. `BOT_USERNAME` is optional because the bot fetches its own username from Telegram on startup.
 
 The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHANNEL_IDS`. For private channels, add the bot as an admin and use the numeric channel ID.
 
@@ -52,7 +52,7 @@ This project is configured for a Heroku container worker dyno.
 
 ```powershell
 heroku stack:set container -a your-app-name
-heroku config:set BOT_TOKEN=... BOT_USERNAME=... ADMIN_IDS=... -a your-app-name
+heroku config:set BOT_TOKEN=... ADMIN_IDS=... -a your-app-name
 git push heroku main
 heroku ps:scale worker=1 -a your-app-name
 ```
@@ -68,7 +68,6 @@ This project includes a Render Blueprint for a Docker background worker.
 Render will create a worker service from `render.yaml`. During setup, enter:
 
 - `BOT_TOKEN`
-- `BOT_USERNAME`
 - `ADMIN_IDS`
 - `REQUIRED_CHANNEL_IDS`
 

@@ -14,8 +14,8 @@
       "required": true
     },
     "BOT_USERNAME": {
-      "description": "Telegram bot username without @.",
-      "required": true
+      "description": "Optional. If empty, the bot fetches its username from Telegram on startup.",
+      "required": false
     },
     "ADMIN_IDS": {
       "description": "Comma-separated Telegram user IDs allowed to use admin commands.",
@@ -47,4 +47,3 @@
     }
   }
 }
-

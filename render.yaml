@@ -14,8 +14,6 @@ services:
     envVars:
       - key: BOT_TOKEN
         sync: false
-      - key: BOT_USERNAME
-        sync: false
       - key: ADMIN_IDS
         sync: false
       - key: REQUIRED_CHANNEL_IDS
