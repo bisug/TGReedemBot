@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from urllib.parse import parse_qsl, urlencode
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -46,14 +45,8 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
     if not url.drivername.startswith("postgresql+asyncpg"):
         return database_url, {}
 
-    query_pairs = parse_qsl(url.query_string(), keep_blank_values=True)
-    sslmode = None
-    kept_pairs: list[tuple[str, str]] = []
-    for key, value in query_pairs:
-        if key == "sslmode":
-            sslmode = value
-        else:
-            kept_pairs.append((key, value))
+    query = dict(url.query)
+    sslmode = query.pop("sslmode", None)
 
     connect_args: dict[str, object] = {}
     if sslmode and sslmode not in {"disable", "allow", "prefer"}:
@@ -62,5 +55,5 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
     if sslmode is None:
         return database_url, connect_args
 
-    cleaned_url = url.set(query=urlencode(kept_pairs))
+    cleaned_url = url.set(query=query)
     return cleaned_url.render_as_string(hide_password=False), connect_args
