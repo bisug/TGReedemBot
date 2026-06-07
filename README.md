@@ -59,6 +59,27 @@ heroku ps:scale worker=1 -a your-app-name
 
 Heroku's filesystem is ephemeral. SQLite works for demos, but production deployments should use persistent storage or migrate the database URL to an external database.
 
+## Render
+
+This project includes a Render Blueprint for a Docker background worker.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bisug/TGReedemBot.git)
+
+Render will create a worker service from `render.yaml`. During setup, enter:
+
+- `BOT_TOKEN`
+- `BOT_USERNAME`
+- `ADMIN_IDS`
+- `REQUIRED_CHANNEL_IDS`
+
+The Blueprint attaches a 1 GB persistent disk at `/app/data` and stores SQLite at:
+
+```text
+sqlite+aiosqlite:////app/data/bot.db
+```
+
+Because this bot uses Telegram polling, deploy it as a background worker, not a web service.
+
 ## Admin Commands
 
 - `/stats` - show bot statistics.

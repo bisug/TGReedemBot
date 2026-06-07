@@ -22,4 +22,3 @@ logs/
 *.log
 tests/
 test/
-Dockerfile

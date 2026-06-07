@@ -12,6 +12,7 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
+        gosu \
         libffi-dev \
         libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -20,12 +21,15 @@ RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install .
 
-RUN mkdir -p /app/data && chown -R app:app /app
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && mkdir -p /app/data \
+    && chown -R app:app /app
 
-USER app
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 CMD ["python", "-m", "src"]
