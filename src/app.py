@@ -63,8 +63,20 @@ async def _load_bot_identity(application: Application) -> None:
 async def _load_required_channel_invites(application: Application) -> None:
     settings: Settings = application.bot_data["settings"]
     generated_links: list[str | None] = []
+    generated_labels: list[str | None] = []
 
     for channel in settings.required_channels():
+        try:
+            chat = await application.bot.get_chat(channel.chat_id)
+            generated_labels.append(chat.title or chat.full_name or chat.username or channel.label)
+        except TelegramError as exc:
+            generated_labels.append(None)
+            logger.warning(
+                "Could not fetch title for required chat %r. Telegram error: %s",
+                channel.chat_id,
+                exc,
+            )
+
         if channel.join_url:
             generated_links.append(None)
             continue
@@ -89,6 +101,7 @@ async def _load_required_channel_invites(application: Application) -> None:
     application.bot_data["settings"] = replace(
         settings,
         required_channel_generated_links=tuple(generated_links),
+        required_channel_generated_labels=tuple(generated_labels),
     )
 
 

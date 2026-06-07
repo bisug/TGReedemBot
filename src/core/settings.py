@@ -81,6 +81,7 @@ class Settings:
     database_url: str = ""
     required_channel_ids: tuple[int | str, ...] = ()
     required_channel_generated_links: tuple[str | None, ...] = ()
+    required_channel_generated_labels: tuple[str | None, ...] = ()
     referral_reward_points: int = 1
     withdraw_cost_points: int = 5
     support_stars_amount: int = 10
@@ -121,11 +122,16 @@ class Settings:
                 if index < len(self.required_channel_generated_links)
                 else None
             )
+            generated_label = (
+                self.required_channel_generated_labels[index]
+                if index < len(self.required_channel_generated_labels)
+                else None
+            )
             join_url = generated_url or None
             if isinstance(channel, str) and channel.startswith("@"):
-                label = channel
+                label = generated_label or channel
                 join_url = join_url or f"https://t.me/{channel[1:]}"
             else:
-                label = f"Channel {index + 1}"
+                label = generated_label or f"Channel {index + 1}"
             channels.append(RequiredChannel(chat_id=channel, label=label, join_url=join_url))
         return tuple(channels)
