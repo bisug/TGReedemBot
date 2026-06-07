@@ -15,13 +15,13 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "bot_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[str | None] = mapped_column(String(128), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    referred_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    referred_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("bot_users.id"), nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     point_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -31,10 +31,10 @@ class User(Base):
 
 
 class PointLedger(Base):
-    __tablename__ = "point_ledger"
+    __tablename__ = "bot_point_ledger"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     points: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(64), nullable=False)
     related_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -44,7 +44,7 @@ class PointLedger(Base):
 
 
 class ClaimCode(Base):
-    __tablename__ = "claim_codes"
+    __tablename__ = "bot_claim_codes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
@@ -57,38 +57,38 @@ class ClaimCode(Base):
 
 
 class ClaimRedemption(Base):
-    __tablename__ = "claim_redemptions"
+    __tablename__ = "bot_claim_redemptions"
     __table_args__ = (UniqueConstraint("claim_code_id", "user_id", name="uq_claim_redemptions_code_user"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    claim_code_id: Mapped[int] = mapped_column(ForeignKey("claim_codes.id"), index=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    claim_code_id: Mapped[int] = mapped_column(ForeignKey("bot_claim_codes.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class Referral(Base):
-    __tablename__ = "referrals"
+    __tablename__ = "bot_referrals"
     __table_args__ = (
         UniqueConstraint("referred_user_id", name="uq_referrals_referred_user"),
         UniqueConstraint("referrer_user_id", "referred_user_id", name="uq_referrals_pair"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
-    referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    referrer_user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
+    referred_user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     awarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class Withdrawal(Base):
-    __tablename__ = "withdrawals"
+    __tablename__ = "bot_withdrawals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     points_cost: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True, nullable=False)
-    redeem_code_id: Mapped[int | None] = mapped_column(ForeignKey("redeem_codes.id"), nullable=True)
+    redeem_code_id: Mapped[int | None] = mapped_column(ForeignKey("bot_redeem_codes.id"), nullable=True)
     admin_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -99,13 +99,13 @@ class Withdrawal(Base):
 
 
 class RedeemCode(Base):
-    __tablename__ = "redeem_codes"
+    __tablename__ = "bot_redeem_codes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="available", index=True, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    assigned_withdrawal_id: Mapped[int | None] = mapped_column(ForeignKey("withdrawals.id"), nullable=True)
+    assigned_withdrawal_id: Mapped[int | None] = mapped_column(ForeignKey("bot_withdrawals.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
@@ -114,10 +114,10 @@ class RedeemCode(Base):
 
 
 class StarPayment(Base):
-    __tablename__ = "star_payments"
+    __tablename__ = "bot_star_payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     invoice_payload: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)

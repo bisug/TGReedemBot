@@ -60,6 +60,8 @@ redeem-bot
 
 The bot initializes the PostgreSQL schema on startup and then starts Telegram polling.
 
+Bot tables are prefixed with `bot_` to avoid collisions with existing database tables such as `users`.
+
 ## Project Structure
 
 ```text
