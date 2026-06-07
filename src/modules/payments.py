@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, MessageHandler, PreCheckoutQueryHandler, 
 
 from src.helpers.common import get_database, get_settings
 from src.services import RedeemService
-from src.utils.ui import Emoji, ce
+from src.utils.ui import Emoji, ce, quote_block
 
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -48,13 +48,14 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if stored is None:
         await message.reply_text(
-            f"{ce('📲', Emoji.PHONE)} Payment received, but I could not match it to an active invoice. "
-            "Please use /paysupport.",
+            f"{ce('📲', Emoji.PHONE)} <b>Payment needs review</b>\n\n"
+            f"{quote_block('Payment was received, but I could not match it to an active invoice. Please use /paysupport.')}",
             parse_mode=ParseMode.HTML,
         )
         return
     await message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} Thank you for supporting the developer. Your Telegram Stars payment was recorded.",
+        f"{ce('✔️', Emoji.CHECK)} <b>Payment recorded</b>\n\n"
+        f"{quote_block('Thank you for supporting the developer. Your Telegram Stars payment was recorded.')}",
         parse_mode=ParseMode.HTML,
     )
 

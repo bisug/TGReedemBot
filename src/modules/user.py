@@ -14,7 +14,7 @@ from src.helpers.common import (
 )
 from src.helpers.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
 from src.services import RedeemService
-from src.utils.ui import Emoji, ce, h
+from src.utils.ui import Emoji, ce, code_block, h, quote_block
 
 
 async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
@@ -37,7 +37,9 @@ def _help_text(*, is_admin: bool) -> str:
     lines = [
         f"{ce('📂', Emoji.FOLDER)} <b>Help</b>",
         "",
-        "This bot lets you earn points, invite friends, and request Google redeem codes.",
+        quote_block(
+            "Earn points from verified referrals and claim codes. Use your points to request Google redeem codes."
+        ),
         "",
         "<b>What you can do:</b>",
         f"{ce('✔️', Emoji.CHECK)} Verify required channels",
@@ -53,7 +55,7 @@ def _help_text(*, is_admin: bool) -> str:
             [
                 "",
                 f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin access enabled</b>",
-                "You can open the Admin Panel from the dashboard.",
+                quote_block("Open the Admin Panel from the dashboard to manage stock, users, and withdrawals."),
             ]
         )
     return "\n".join(lines)
@@ -63,7 +65,7 @@ def _commands_intro_text(*, is_admin: bool) -> str:
     lines = [
         f"{ce('🔲', Emoji.MENU)} <b>Commands</b>",
         "",
-        "Choose which command section you want to view.",
+        quote_block("Choose a command section below. Admin commands are visible only to configured admins."),
         "",
         f"{ce('📂', Emoji.FOLDER)} User Commands - available to everyone",
     ]
@@ -77,10 +79,12 @@ def _user_commands_text() -> str:
         [
             f"{ce('📂', Emoji.FOLDER)} <b>User Commands</b>",
             "",
-            "<code>/start</code> - Open the dashboard",
-            "<code>/help</code> - Open help",
-            "<code>/claim &lt;code&gt;</code> - Redeem a points claim code",
-            "<code>/paysupport</code> - Get help with Telegram Stars payments",
+            code_block(
+                "/start - Open the dashboard\n"
+                "/help - Open help\n"
+                "/claim <code> - Redeem a points claim code\n"
+                "/paysupport - Get help with Telegram Stars payments"
+            ),
             "",
             "<b>Dashboard buttons:</b>",
             f"{ce('⬇️', Emoji.DOWNLOAD)} Withdraw - Request a Google redeem code",
@@ -97,15 +101,17 @@ def _admin_commands_text() -> str:
         [
             f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin Commands</b>",
             "",
-            "<code>/admin</code> - Show the admin menu",
-            "<code>/stats</code> - Show users, points, stock, withdrawals, and Stars totals",
-            "<code>/broadcast &lt;message&gt;</code> - Send a message to all registered users",
-            "<code>/genpoints &lt;points&gt; [max_uses] [custom_code]</code> - Create a claim code for points",
-            "<code>/addcodes</code> - Add Google redeem code inventory, one code per line",
-            "<code>/stock</code> - Show redeem code stock counts",
-            "<code>/withdrawals</code> - List pending withdrawal requests",
-            "<code>/approve &lt;withdrawal_id&gt;</code> - Approve a request and send a code",
-            "<code>/reject &lt;withdrawal_id&gt; [reason]</code> - Reject a request without deducting points",
+            code_block(
+                "/admin - Show the admin menu\n"
+                "/stats - Show users, points, stock, withdrawals, and Stars totals\n"
+                "/broadcast <message> - Send a message to all registered users\n"
+                "/genpoints <points> [max_uses] [custom_code] - Create a claim code for points\n"
+                "/addcodes - Add Google redeem code inventory, one code per line\n"
+                "/stock - Show redeem code stock counts\n"
+                "/withdrawals - List pending withdrawal requests\n"
+                "/approve <withdrawal_id> - Approve a request and send a code\n"
+                "/reject <withdrawal_id> [reason] - Reject a request without deducting points"
+            ),
         ]
     )
 
@@ -128,9 +134,8 @@ async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         text = (
             f"{ce('✔️', Emoji.CHECK)} <b>Verification Required</b>\n\n"
-            "Before you can use the dashboard, please join the required channel(s).\n\n"
-            f"<b>Required channel(s):</b>\n{h(channel_lines)}\n\n"
-            "After joining, press I joined and I will verify your membership."
+            f"{quote_block('Join every required chat below, then press I joined so I can verify your membership.')}\n\n"
+            f"<b>Required channel(s):</b>\n{quote_block(channel_lines)}"
         )
     else:
         text = f"{ce('✔️', Emoji.CHECK)} <b>Verification</b>\n\nPress I joined to continue to your dashboard."
@@ -168,7 +173,7 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
             f"<b>Available points:</b> {points}\n"
             f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
-            "Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.\n\n"
+            f"{quote_block('Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.')}\n\n"
             "Use Help for a quick guide or Commands for exact command formats."
         ),
         reply_markup=dashboard_keyboard(is_admin=_is_admin(update, settings)),
@@ -204,7 +209,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message:
         await update.effective_message.reply_text(
             f"{ce('🔲', Emoji.MENU)} <b>Welcome to Redeem Code Bot</b>\n\n"
-            "Use the dashboard below to check your points, invite friends, request withdrawals, view help, or open commands.",
+            f"{quote_block('Use the dashboard below to check points, invite friends, request withdrawals, view help, or open commands.')}",
             parse_mode=ParseMode.HTML,
         )
     await _show_dashboard(update, context)
@@ -313,8 +318,8 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"{ce('🌐', Emoji.GLOBE)} <b>Referral Program</b>\n\n"
             f"<b>Referral points:</b> {referral_points}\n"
             f"<b>Successful referrals:</b> {successful_referrals}\n\n"
-            "Share this link with friends. You earn points after they start the bot and pass channel verification.\n\n"
-            f"<b>Your referral link:</b>\n{h(link)}"
+            f"{quote_block('Share this link with friends. You earn points after they start the bot and pass channel verification.')}\n\n"
+            f"<b>Your referral link:</b>\n{quote_block(link)}"
         ),
         reply_markup=back_keyboard(),
         disable_web_page_preview=True,
@@ -349,7 +354,7 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"<b>Available points:</b> {points}\n"
             f"<b>Required points:</b> {settings.withdraw_cost_points}\n"
             f"<b>Withdrawal status:</b> {h(status)}\n\n"
-            f"{h(result.message)}"
+            f"{quote_block(result.message)}"
         ),
         reply_markup=back_keyboard(),
         parse_mode=ParseMode.HTML,
@@ -389,7 +394,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.effective_message.reply_text(
             f"{ce('📂', Emoji.FOLDER)} <b>Claim Points</b>\n\n"
             "Please send the code you want to claim.\n\n"
-            "Example:\n<code>/claim BONUS10</code>",
+            f"<b>Example:</b>\n{code_block('/claim BONUS10')}",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -423,7 +428,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     result_message = result.message if result else "Claim failed. Please try again."
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} {h(result_message)}",
+        f"{ce('✔️', Emoji.CHECK)} <b>Claim Result</b>\n\n{quote_block(result_message)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -444,8 +449,7 @@ async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
     if update.effective_message:
         await update.effective_message.reply_text(
             f"{ce('📲', Emoji.PHONE)} <b>Payment support</b>\n\n"
-            "If you had a problem with a Telegram Stars payment, send the admin your issue details, payment date, "
-            "and Telegram charge ID if it is visible in your receipt.",
+            f"{quote_block('If you had a problem with a Telegram Stars payment, send the admin your issue details, payment date, and Telegram charge ID if it is visible in your receipt.')}",
             parse_mode=ParseMode.HTML,
         )
 

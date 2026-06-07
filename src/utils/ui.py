@@ -27,6 +27,14 @@ def h(value: object) -> str:
     return escape(str(value), quote=False)
 
 
+def quote_block(value: object) -> str:
+    return f"<blockquote>{h(value)}</blockquote>"
+
+
+def code_block(value: object) -> str:
+    return f"<pre>{h(value)}</pre>"
+
+
 def ce(fallback: str, emoji_id: str) -> str:
     return f'<tg-emoji emoji-id="{emoji_id}">{h(fallback)}</tg-emoji>'
 
