@@ -48,6 +48,8 @@ docker run --env-file .env redeem-code-bot
 
 This project is configured for a Heroku container worker dyno.
 
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/bisug/TGReedemBot)
+
 ```powershell
 heroku stack:set container -a your-app-name
 heroku config:set BOT_TOKEN=... BOT_USERNAME=... ADMIN_IDS=... -a your-app-name
