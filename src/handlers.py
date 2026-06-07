@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from telegram import LabeledPrice, Update
+from telegram.error import BadRequest
 from telegram.constants import ParseMode
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
@@ -18,7 +19,11 @@ from src.ui import Emoji, ce, h
 
 async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
     if update.callback_query and update.callback_query.message:
-        await update.callback_query.edit_message_text(text, **kwargs)
+        try:
+            await update.callback_query.edit_message_text(text, **kwargs)
+        except BadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                raise
     elif update.effective_message:
         await update.effective_message.reply_text(text, **kwargs)
 
