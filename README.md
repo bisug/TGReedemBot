@@ -34,6 +34,14 @@ postgresql://user:password@host:5432/database
 postgres://user:password@host:5432/database
 ```
 
+Provider examples that use `psycopg2.connect(...)` usually give the same URL this bot needs. Put that URL directly in `DATABASE_URL`; do not add `psycopg2` connection code to the bot:
+
+```env
+DATABASE_URL=postgres://avnadmin:password@your-aiven-host.aivencloud.com:28969/defaultdb?sslmode=require
+```
+
+If your password contains special characters such as `@`, `:`, `/`, `#`, or `?`, URL-encode the password before putting it in `DATABASE_URL`.
+
 The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHANNEL_IDS`. For private channels, add the bot as an admin and use the numeric channel ID.
 
 Force-join channels:

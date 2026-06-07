@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -49,8 +50,17 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
     sslmode = query.pop("sslmode", None)
 
     connect_args: dict[str, object] = {}
-    if sslmode and sslmode not in {"disable", "allow", "prefer"}:
-        connect_args["ssl"] = True
+    if sslmode == "require":
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ssl_context
+    elif sslmode == "verify-ca":
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        connect_args["ssl"] = ssl_context
+    elif sslmode == "verify-full":
+        connect_args["ssl"] = ssl.create_default_context()
 
     if sslmode is None:
         return database_url, connect_args
