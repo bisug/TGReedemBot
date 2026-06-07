@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from html import escape
 
 from telegram import InlineKeyboardButton
@@ -35,6 +36,7 @@ def code_block(value: object) -> str:
     return f"<pre>{h(value)}</pre>"
 
 
+@lru_cache(maxsize=None)
 def ce(fallback: str, emoji_id: str) -> str:
     return f'<tg-emoji emoji-id="{emoji_id}">{h(fallback)}</tg-emoji>'
 

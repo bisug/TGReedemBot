@@ -4,7 +4,7 @@ import asyncio
 
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import CommandHandler, ContextTypes
 
 from src.database.models import User
@@ -30,6 +30,45 @@ def _command_body(update: Update) -> str:
     text = update.effective_message.text if update.effective_message else ""
     parts = text.split(maxsplit=1)
     return parts[1] if len(parts) > 1 else ""
+
+
+async def _send_broadcast_message(bot, telegram_id: int, text: str) -> bool:  # type: ignore[no-untyped-def]
+    for attempt in range(2):
+        try:
+            await bot.send_message(chat_id=telegram_id, text=text)
+            return True
+        except RetryAfter as exc:
+            if attempt:
+                return False
+            retry_after = exc.retry_after
+            delay = retry_after.total_seconds() if hasattr(retry_after, "total_seconds") else float(retry_after)
+            await asyncio.sleep(delay + 0.1)
+        except TelegramError:
+            return False
+    return False
+
+
+async def _broadcast_many(bot, user_ids: list[int], text: str, *, concurrency: int) -> tuple[int, int]:  # type: ignore[no-untyped-def]
+    if not user_ids:
+        return 0, 0
+
+    sent = 0
+    failed = 0
+    next_index = 0
+
+    async def worker() -> None:
+        nonlocal sent, failed, next_index
+        while next_index < len(user_ids):
+            telegram_id = user_ids[next_index]
+            next_index += 1
+            if await _send_broadcast_message(bot, telegram_id, text):
+                sent += 1
+            else:
+                failed += 1
+
+    worker_count = min(concurrency, len(user_ids))
+    await asyncio.gather(*(worker() for _ in range(worker_count)))
+    return sent, failed
 
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,15 +173,12 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             service = RedeemService(session, settings)
             user_ids = await service.all_user_telegram_ids()
 
-    sent = 0
-    failed = 0
-    for telegram_id in user_ids:
-        try:
-            await context.bot.send_message(chat_id=telegram_id, text=body)
-            sent += 1
-            await asyncio.sleep(0.05)
-        except TelegramError:
-            failed += 1
+    sent, failed = await _broadcast_many(
+        context.bot,
+        user_ids,
+        body,
+        concurrency=settings.broadcast_concurrency,
+    )
 
     result_text = f"Sent: {sent}\nFailed: {failed}"
     await update.effective_message.reply_text(

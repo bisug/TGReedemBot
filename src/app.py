@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import replace
 
@@ -21,7 +22,13 @@ def build_application(
     *,
     manage_database_lifecycle: bool = False,
 ) -> Application:
-    builder = ApplicationBuilder().token(settings.bot_token)
+    builder = (
+        ApplicationBuilder()
+        .token(settings.bot_token)
+        .concurrent_updates(settings.telegram_concurrent_updates)
+        .connection_pool_size(settings.telegram_connection_pool_size)
+        .pool_timeout(settings.telegram_pool_timeout_seconds)
+    )
 
     if manage_database_lifecycle:
         builder = builder.post_init(_startup(database)).post_shutdown(_dispose_database(database))
@@ -62,47 +69,53 @@ async def _load_bot_identity(application: Application) -> None:
 
 async def _load_required_channel_invites(application: Application) -> None:
     settings: Settings = application.bot_data["settings"]
-    generated_links: list[str | None] = []
-    generated_labels: list[str | None] = []
+    channels = settings.required_channels()
+    if not channels:
+        return
 
-    for channel in settings.required_channels():
-        try:
-            chat = await application.bot.get_chat(channel.chat_id)
-            generated_labels.append(chat.title or chat.full_name or chat.username or channel.label)
-        except TelegramError as exc:
-            generated_labels.append(None)
-            logger.warning(
-                "Could not fetch title for required chat %r. Telegram error: %s",
-                channel.chat_id,
-                exc,
-            )
+    channel_results = await asyncio.gather(
+        *(_load_required_channel_invite(application, channel) for channel in channels)
+    )
+    generated_links = tuple(link for link, _label in channel_results)
+    generated_labels = tuple(label for _link, label in channel_results)
 
-        if channel.join_url:
-            generated_links.append(None)
-            continue
+    application.bot_data["settings"] = replace(
+        settings,
+        required_channel_generated_links=generated_links,
+        required_channel_generated_labels=generated_labels,
+    )
 
+
+async def _load_required_channel_invite(application: Application, channel) -> tuple[str | None, str | None]:  # type: ignore[no-untyped-def]
+    generated_label: str | None = None
+    generated_link: str | None = None
+
+    try:
+        chat = await application.bot.get_chat(channel.chat_id)
+        generated_label = chat.title or chat.full_name or chat.username or channel.label
+    except TelegramError as exc:
+        logger.warning(
+            "Could not fetch title for required chat %r. Telegram error: %s",
+            channel.chat_id,
+            exc,
+        )
+
+    if not channel.join_url:
         try:
             invite = await application.bot.create_chat_invite_link(
                 chat_id=channel.chat_id,
                 name="Redeem Bot Force Join",
             )
+            generated_link = invite.invite_link
         except TelegramError as exc:
-            generated_links.append(None)
             logger.warning(
                 "Could not create invite link for required chat %r. "
                 "The bot must be an admin with invite-user permission. Telegram error: %s",
                 channel.chat_id,
                 exc,
             )
-            continue
 
-        generated_links.append(invite.invite_link)
-
-    application.bot_data["settings"] = replace(
-        settings,
-        required_channel_generated_links=tuple(generated_links),
-        required_channel_generated_labels=tuple(generated_labels),
-    )
+    return generated_link, generated_label
 
 
 def _dispose_database(database: Database):

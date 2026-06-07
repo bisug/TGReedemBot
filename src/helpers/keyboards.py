@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.config import Settings
 from src.utils.ui import Emoji, styled_button
 
 
+@lru_cache(maxsize=4)
 def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [
@@ -59,6 +62,7 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+@lru_cache(maxsize=4)
 def commands_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [styled_button("User Commands", callback_data="commands:user", emoji_id=Emoji.FOLDER, style="primary")]
@@ -93,6 +97,7 @@ def verification_keyboard(settings: Settings) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+@lru_cache(maxsize=32)
 def back_keyboard(callback_data: str = "dashboard:home") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[styled_button("Back", callback_data=callback_data, emoji_id=Emoji.BACK, style="primary")]]

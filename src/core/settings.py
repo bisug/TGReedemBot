@@ -46,6 +46,18 @@ def _env_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer") from exc
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 def normalize_database_url(database_url: str) -> str:
     value = database_url.strip()
     if not value:
@@ -85,6 +97,17 @@ class Settings:
     referral_reward_points: int = 1
     withdraw_cost_points: int = 5
     support_stars_amount: int = 10
+    telegram_concurrent_updates: int = 64
+    telegram_connection_pool_size: int = 64
+    telegram_pool_timeout_seconds: int = 10
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_timeout_seconds: int = 30
+    database_pool_pre_ping: bool = False
+    membership_cache_ttl_seconds: int = 300
+    membership_cache_negative_ttl_seconds: int = 15
+    membership_cache_max_entries: int = 10000
+    broadcast_concurrency: int = 20
 
     @classmethod
     def from_env(cls, *, require_bot_token: bool = True) -> "Settings":
@@ -104,6 +127,19 @@ class Settings:
             referral_reward_points=_env_int("REFERRAL_REWARD_POINTS", 1),
             withdraw_cost_points=_env_int("WITHDRAW_COST_POINTS", 5),
             support_stars_amount=_env_int("SUPPORT_STARS_AMOUNT", 10),
+            telegram_concurrent_updates=max(1, _env_int("TELEGRAM_CONCURRENT_UPDATES", 64)),
+            telegram_connection_pool_size=max(1, _env_int("TELEGRAM_CONNECTION_POOL_SIZE", 64)),
+            telegram_pool_timeout_seconds=max(1, _env_int("TELEGRAM_POOL_TIMEOUT_SECONDS", 10)),
+            database_pool_size=max(1, _env_int("DATABASE_POOL_SIZE", 10)),
+            database_max_overflow=max(0, _env_int("DATABASE_MAX_OVERFLOW", 20)),
+            database_pool_timeout_seconds=max(1, _env_int("DATABASE_POOL_TIMEOUT_SECONDS", 30)),
+            database_pool_pre_ping=_env_bool("DATABASE_POOL_PRE_PING", False),
+            membership_cache_ttl_seconds=max(0, _env_int("MEMBERSHIP_CACHE_TTL_SECONDS", 300)),
+            membership_cache_negative_ttl_seconds=max(
+                0, _env_int("MEMBERSHIP_CACHE_NEGATIVE_TTL_SECONDS", 15)
+            ),
+            membership_cache_max_entries=max(0, _env_int("MEMBERSHIP_CACHE_MAX_ENTRIES", 10000)),
+            broadcast_concurrency=max(1, _env_int("BROADCAST_CONCURRENCY", 20)),
         )
 
     def is_admin(self, telegram_id: int | None) -> bool:

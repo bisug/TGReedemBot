@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import (
@@ -68,9 +68,15 @@ class RedeemService:
             self.session.add(user)
             created = True
 
-        user.username = username
-        user.first_name = first_name
-        await self.session.flush()
+        needs_flush = created
+        if user.username != username:
+            user.username = username
+            needs_flush = True
+        if user.first_name != first_name:
+            user.first_name = first_name
+            needs_flush = True
+        if needs_flush:
+            await self.session.flush()
 
         if created and referral_telegram_id and referral_telegram_id != telegram_id:
             referrer = await self.get_user_by_telegram_id(referral_telegram_id)
@@ -95,10 +101,6 @@ class RedeemService:
         if existing is not None:
             return False
 
-        user = await self.session.get(User, user_id)
-        if user is None:
-            raise ValueError("User not found")
-
         self.session.add(
             PointLedger(
                 user_id=user_id,
@@ -109,17 +111,25 @@ class RedeemService:
                 idempotency_key=idempotency_key,
             )
         )
-        user.point_balance += points
+        result = await self.session.execute(
+            update(User).where(User.id == user_id).values(point_balance=User.point_balance + points)
+        )
+        if result.rowcount == 0:
+            raise ValueError("User not found")
         await self.session.flush()
         return True
 
-    async def mark_verified_and_award(self, telegram_id: int) -> User:
-        user = await self.get_user_by_telegram_id(telegram_id)
+    async def mark_verified_and_award(self, telegram_id: int, *, user: User | None = None) -> User:
+        if user is None:
+            user = await self.session.scalar(select(User).where(User.telegram_id == telegram_id).with_for_update())
+        else:
+            user = await self.session.scalar(select(User).where(User.id == user.id).with_for_update())
         if user is None:
             raise ValueError("User not found")
+        if user.is_verified:
+            return user
 
-        if not user.is_verified:
-            user.is_verified = True
+        user.is_verified = True
 
         referral = await self.session.scalar(
             select(Referral).where(Referral.referred_user_id == user.id, Referral.status == "pending")
@@ -204,10 +214,14 @@ class RedeemService:
         code: str,
         username: str | None = None,
         first_name: str | None = None,
+        user: User | None = None,
     ) -> ClaimResult:
-        user = await self.get_or_create_user(telegram_id=telegram_id, username=username, first_name=first_name)
+        if user is None:
+            user = await self.get_or_create_user(telegram_id=telegram_id, username=username, first_name=first_name)
         normalized = self.normalize_claim_code(code)
-        claim_code = await self.session.scalar(select(ClaimCode).where(ClaimCode.code == normalized))
+        claim_code = await self.session.scalar(
+            select(ClaimCode).where(ClaimCode.code == normalized).with_for_update()
+        )
         if claim_code is None or not claim_code.is_active:
             return ClaimResult(False, 0, "That claim code is invalid. Please check the code and try again.")
         if claim_code.redeemed_count >= claim_code.max_redemptions:
@@ -238,23 +252,29 @@ class RedeemService:
         return ClaimResult(True, claim_code.points, f"Success. {claim_code.points} point(s) were added to your account.")
 
     async def admin_stats(self) -> dict[str, int]:
-        total_users = await self.session.scalar(select(func.count()).select_from(User))
-        verified_users = await self.session.scalar(select(func.count()).select_from(User).where(User.is_verified.is_(True)))
+        user_stats = await self.session.execute(
+            select(
+                func.count(User.id),
+                func.coalesce(func.sum(case((User.is_verified.is_(True), 1), else_=0)), 0),
+                func.coalesce(func.sum(User.point_balance), 0),
+            )
+        )
+        total_users, verified_users, total_points = user_stats.one()
         pending_withdrawals = await self.session.scalar(
-            select(func.count()).select_from(Withdrawal).where(Withdrawal.status == "pending")
+            select(func.count(Withdrawal.id)).where(Withdrawal.status == "pending")
         )
-        available_codes = await self.session.scalar(
-            select(func.count()).select_from(RedeemCode).where(RedeemCode.status == "available")
+        code_stats = await self.session.execute(
+            select(
+                func.coalesce(func.sum(case((RedeemCode.status == "available", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((RedeemCode.status == "sent", 1), else_=0)), 0),
+            )
         )
-        sent_codes = await self.session.scalar(
-            select(func.count()).select_from(RedeemCode).where(RedeemCode.status == "sent")
-        )
-        total_points = await self.session.scalar(select(func.coalesce(func.sum(User.point_balance), 0)))
+        available_codes, sent_codes = code_stats.one()
         paid_stars = await self.session.scalar(
             select(func.coalesce(func.sum(StarPayment.amount), 0)).where(StarPayment.status == "paid")
         )
         active_claim_codes = await self.session.scalar(
-            select(func.count()).select_from(ClaimCode).where(ClaimCode.is_active.is_(True))
+            select(func.count(ClaimCode.id)).where(ClaimCode.is_active.is_(True))
         )
         return {
             "total_users": int(total_users or 0),
@@ -272,7 +292,7 @@ class RedeemService:
         return [int(row[0]) for row in rows.all()]
 
     async def create_withdrawal_request(self, telegram_id: int) -> WithdrawalRequestResult:
-        user = await self.get_user_by_telegram_id(telegram_id)
+        user = await self.session.scalar(select(User).where(User.telegram_id == telegram_id).with_for_update())
         if user is None:
             return WithdrawalRequestResult("missing_user", None, "Please use /start first so I can create your account.")
 
@@ -280,6 +300,7 @@ class RedeemService:
             select(Withdrawal)
             .where(Withdrawal.user_id == user.id, Withdrawal.status == "pending")
             .order_by(Withdrawal.id.desc())
+            .limit(1)
         )
         if existing is not None:
             return WithdrawalRequestResult(
@@ -310,20 +331,35 @@ class RedeemService:
         )
 
     async def add_codes(self, codes: list[str], *, note: str | None = None) -> tuple[int, int]:
-        added = 0
+        cleaned_codes: list[str] = []
+        seen: set[str] = set()
         skipped = 0
+
         for raw_code in codes:
             code = raw_code.strip()
             if not code:
                 continue
-            exists = await self.session.scalar(select(RedeemCode).where(RedeemCode.code == code))
-            if exists is not None:
+            if code in seen:
                 skipped += 1
                 continue
-            self.session.add(RedeemCode(code=code, note=note))
-            added += 1
+            seen.add(code)
+            cleaned_codes.append(code)
+
+        if not cleaned_codes:
+            return 0, skipped
+
+        existing_rows = await self.session.scalars(
+            select(RedeemCode.code).where(RedeemCode.code.in_(cleaned_codes))
+        )
+        existing_codes = set(existing_rows.all())
+        new_codes = [code for code in cleaned_codes if code not in existing_codes]
+        skipped += len(cleaned_codes) - len(new_codes)
+        if not new_codes:
+            return 0, skipped
+
+        self.session.add_all(RedeemCode(code=code, note=note) for code in new_codes)
         await self.session.flush()
-        return added, skipped
+        return len(new_codes), skipped
 
     async def stock_counts(self) -> dict[str, int]:
         rows = await self.session.execute(select(RedeemCode.status, func.count()).group_by(RedeemCode.status))
@@ -344,7 +380,9 @@ class RedeemService:
         return list(rows.all())
 
     async def approve_withdrawal(self, withdrawal_id: int, *, admin_telegram_id: int) -> ApprovalResult:
-        withdrawal = await self.session.get(Withdrawal, withdrawal_id)
+        withdrawal = await self.session.scalar(
+            select(Withdrawal).where(Withdrawal.id == withdrawal_id).with_for_update()
+        )
         if withdrawal is None:
             return ApprovalResult(False, None, None, "Withdrawal not found.")
 
@@ -362,7 +400,11 @@ class RedeemService:
             return ApprovalResult(False, withdrawal, None, "User no longer has enough points.")
 
         code = await self.session.scalar(
-            select(RedeemCode).where(RedeemCode.status == "available").order_by(RedeemCode.id.asc()).limit(1)
+            select(RedeemCode)
+            .where(RedeemCode.status == "available")
+            .order_by(RedeemCode.id.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
         )
         if code is None:
             return ApprovalResult(False, withdrawal, None, "No redeem codes are available. Add stock with /addcodes first.")
@@ -392,7 +434,9 @@ class RedeemService:
     async def reject_withdrawal(
         self, withdrawal_id: int, *, admin_telegram_id: int, reason: str | None = None
     ) -> ApprovalResult:
-        withdrawal = await self.session.get(Withdrawal, withdrawal_id)
+        withdrawal = await self.session.scalar(
+            select(Withdrawal).where(Withdrawal.id == withdrawal_id).with_for_update()
+        )
         if withdrawal is None:
             return ApprovalResult(False, None, None, "Withdrawal not found.")
         if withdrawal.status != "pending":

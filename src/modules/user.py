@@ -8,6 +8,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 from src.helpers.common import (
     answer_callback,
     get_database,
+    get_membership_cache,
     get_settings,
     has_required_channels,
     parse_referral_arg,
@@ -159,13 +160,11 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     async with db.session() as session:
         async with session.begin():
             service = RedeemService(session, settings)
-            user = await service.get_user_by_telegram_id(telegram_user.id)
-            if user is None:
-                user = await service.get_or_create_user(
-                    telegram_id=telegram_user.id,
-                    username=telegram_user.username,
-                    first_name=telegram_user.first_name,
-                )
+            user = await service.get_or_create_user(
+                telegram_id=telegram_user.id,
+                username=telegram_user.username,
+                first_name=telegram_user.first_name,
+            )
             points = user.point_balance
     await _send_or_edit(
         update,
@@ -189,7 +188,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     referral_telegram_id = parse_referral_arg(context.args)
-    channel_ok = await has_required_channels(context.bot, settings, telegram_user.id)
+    channel_ok = await has_required_channels(
+        context.bot,
+        settings,
+        telegram_user.id,
+        cache=get_membership_cache(context),
+    )
 
     async with db.session() as session:
         async with session.begin():
@@ -223,7 +227,12 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if telegram_user is None:
         return
 
-    if not await has_required_channels(context.bot, settings, telegram_user.id):
+    if not await has_required_channels(
+        context.bot,
+        settings,
+        telegram_user.id,
+        cache=get_membership_cache(context),
+    ):
         await _show_verification(update, context)
         return
 
@@ -402,23 +411,29 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     settings = get_settings(context)
     db = get_database(context)
     claim_code = context.args[0]
-    channel_ok = await has_required_channels(context.bot, settings, telegram_user.id)
+    channel_ok = await has_required_channels(
+        context.bot,
+        settings,
+        telegram_user.id,
+        cache=get_membership_cache(context),
+    )
 
     async with db.session() as session:
         async with session.begin():
             service = RedeemService(session, settings)
-            await service.get_or_create_user(
+            user = await service.get_or_create_user(
                 telegram_id=telegram_user.id,
                 username=telegram_user.username,
                 first_name=telegram_user.first_name,
             )
             if channel_ok:
-                await service.mark_verified_and_award(telegram_user.id)
+                user = await service.mark_verified_and_award(telegram_user.id, user=user)
                 result = await service.claim_points(
                     telegram_id=telegram_user.id,
                     username=telegram_user.username,
                     first_name=telegram_user.first_name,
                     code=claim_code,
+                    user=user,
                 )
             else:
                 result = None

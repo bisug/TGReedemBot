@@ -12,13 +12,25 @@ from src.database.models import Base
 
 
 class Database:
-    def __init__(self, database_url: str, *, echo: bool = False) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        echo: bool = False,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+        pool_timeout: int = 30,
+        pool_pre_ping: bool = False,
+    ) -> None:
         self.database_url, connect_args = prepare_asyncpg_url(database_url)
         self.engine = create_async_engine(
             self.database_url,
             echo=echo,
             future=True,
-            pool_pre_ping=True,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_pre_ping=pool_pre_ping,
             connect_args=connect_args,
         )
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
