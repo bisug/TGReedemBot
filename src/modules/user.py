@@ -123,7 +123,9 @@ async def _require_admin_callback(update: Update, context: ContextTypes.DEFAULT_
 async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = get_settings(context)
     if settings.required_channel_ids:
-        channel_lines = "\n".join(f"- {channel}" for channel in settings.required_channel_ids)
+        channel_lines = "\n".join(
+            f"{index}. {channel.label}" for index, channel in enumerate(settings.required_channels(), start=1)
+        )
         text = (
             f"{ce('✔️', Emoji.CHECK)} <b>Verification Required</b>\n\n"
             "Before you can use the dashboard, please join the required channel(s).\n\n"
@@ -133,6 +135,14 @@ async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         text = f"{ce('✔️', Emoji.CHECK)} <b>Verification</b>\n\nPress I joined to continue to your dashboard."
     await _send_or_edit(update, text, reply_markup=verification_keyboard(settings), parse_mode=ParseMode.HTML)
+
+
+async def missing_join_link(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer(
+            "Invite link is unavailable. The bot must be admin in that chat with invite-user permission.",
+            show_alert=True,
+        )
 
 
 async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -446,6 +456,7 @@ def register_user_handlers(application) -> None:  # type: ignore[no-untyped-def]
     application.add_handler(CommandHandler("claim", claim_command))
     application.add_handler(CommandHandler("paysupport", pay_support))
     application.add_handler(CallbackQueryHandler(verify, pattern="^verify$"))
+    application.add_handler(CallbackQueryHandler(missing_join_link, pattern="^join:missing:\\d+$"))
     application.add_handler(CallbackQueryHandler(dashboard_home, pattern="^dashboard:home$"))
     application.add_handler(CallbackQueryHandler(help_screen, pattern="^dashboard:help$"))
     application.add_handler(CallbackQueryHandler(commands_screen, pattern="^dashboard:commands$"))

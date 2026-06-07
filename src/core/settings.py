@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -12,7 +13,7 @@ load_dotenv()
 def _split_csv(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
-    return tuple(part.strip() for part in value.split(",") if part.strip())
+    return tuple(part.strip() for part in re.split(r"[\s,;]+", value) if part.strip())
 
 
 def _parse_ints(value: str | None) -> frozenset[int]:
@@ -61,6 +62,13 @@ def normalize_database_url(database_url: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class RequiredChannel:
+    chat_id: int | str
+    label: str
+    join_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     bot_token: str
     admin_ids: frozenset[int]
@@ -72,6 +80,7 @@ class Settings:
     bot_supports_inline_queries: bool | None = None
     database_url: str = ""
     required_channel_ids: tuple[int | str, ...] = ()
+    required_channel_generated_links: tuple[str | None, ...] = ()
     referral_reward_points: int = 1
     withdraw_cost_points: int = 5
     support_stars_amount: int = 10
@@ -100,7 +109,23 @@ class Settings:
         return telegram_id is not None and telegram_id in self.admin_ids
 
     def public_channel_links(self) -> Iterable[tuple[str, str]]:
-        for channel in self.required_channel_ids:
+        for channel in self.required_channels():
+            if channel.join_url:
+                yield channel.label, channel.join_url
+
+    def required_channels(self) -> tuple[RequiredChannel, ...]:
+        channels: list[RequiredChannel] = []
+        for index, channel in enumerate(self.required_channel_ids):
+            generated_url = (
+                self.required_channel_generated_links[index]
+                if index < len(self.required_channel_generated_links)
+                else None
+            )
+            join_url = generated_url or None
             if isinstance(channel, str) and channel.startswith("@"):
-                username = channel[1:]
-                yield channel, f"https://t.me/{username}"
+                label = channel
+                join_url = join_url or f"https://t.me/{channel[1:]}"
+            else:
+                label = f"Channel {index + 1}"
+            channels.append(RequiredChannel(chat_id=channel, label=label, join_url=join_url))
+        return tuple(channels)

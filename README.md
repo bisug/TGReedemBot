@@ -36,6 +36,14 @@ postgres://user:password@host:5432/database
 
 The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHANNEL_IDS`. For private channels, add the bot as an admin and use the numeric channel ID.
 
+Force-join channels:
+
+```env
+REQUIRED_CHANNEL_IDS=-1001234555,-1002203742882
+```
+
+The bot creates one separate join button for every channel in `REQUIRED_CHANNEL_IDS`. Public `@channel` entries get automatic `https://t.me/...` links. Numeric/private chat IDs get auto-generated invite links on startup, so the bot must be an admin in those chats with invite-user permission.
+
 ## Run
 
 ```powershell

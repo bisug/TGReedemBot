@@ -73,8 +73,22 @@ def commands_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
 
 def verification_keyboard(settings: Settings) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    for label, url in settings.public_channel_links():
-        rows.append([styled_button(f"Join {label}", url=url, emoji_id=Emoji.GLOBE, style="primary")])
+    for index, channel in enumerate(settings.required_channels(), start=1):
+        if channel.join_url:
+            button = styled_button(
+                f"Join {channel.label}",
+                url=channel.join_url,
+                emoji_id=Emoji.GLOBE,
+                style="primary",
+            )
+        else:
+            button = styled_button(
+                f"Join {channel.label}",
+                callback_data=f"join:missing:{index}",
+                emoji_id=Emoji.GLOBE,
+                style="primary",
+            )
+        rows.append([button])
     rows.append([styled_button("I joined", callback_data="verify", emoji_id=Emoji.CHECK, style="success")])
     return InlineKeyboardMarkup(rows)
 

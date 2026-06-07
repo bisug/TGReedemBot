@@ -26,7 +26,7 @@
       "required": true
     },
     "REQUIRED_CHANNEL_IDS": {
-      "description": "Comma-separated required channel usernames or numeric IDs.",
+      "description": "Required channel usernames or numeric IDs. Separate multiple channels with commas, spaces, semicolons, or new lines.",
       "required": false
     },
     "REFERRAL_REWARD_POINTS": {
