@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from telegram import LabeledPrice, Update
+from telegram.constants import ParseMode
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
 from src.common import (
@@ -12,6 +13,7 @@ from src.common import (
 )
 from src.keyboards import back_keyboard, dashboard_keyboard, verification_keyboard
 from src.service import RedeemService
+from src.ui import Emoji, ce, h
 
 
 async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
@@ -26,13 +28,14 @@ async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if settings.required_channel_ids:
         channel_lines = "\n".join(f"- {channel}" for channel in settings.required_channel_ids)
         text = (
+            f"{ce('✔️', Emoji.CHECK)} <b>Verification Required</b>\n\n"
             "Before you can use the dashboard, please join the required channel(s).\n\n"
-            f"Required channel(s):\n{channel_lines}\n\n"
+            f"<b>Required channel(s):</b>\n{h(channel_lines)}\n\n"
             "After joining, press I joined and I will verify your membership."
         )
     else:
-        text = "Press I joined to continue to your dashboard."
-    await _send_or_edit(update, text, reply_markup=verification_keyboard(settings))
+        text = f"{ce('✔️', Emoji.CHECK)} <b>Verification</b>\n\nPress I joined to continue to your dashboard."
+    await _send_or_edit(update, text, reply_markup=verification_keyboard(settings), parse_mode=ParseMode.HTML)
 
 
 async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -55,12 +58,13 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _send_or_edit(
         update,
         (
-            "Redeem Code Dashboard\n\n"
-            f"Available points: {points}\n"
-            f"Withdrawal requirement: {settings.withdraw_cost_points} points\n\n"
+            f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
+            f"<b>Available points:</b> {points}\n"
+            f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
             "Earn points from referrals and claim codes. When you have enough points, request a Google redeem code."
         ),
         reply_markup=dashboard_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -91,8 +95,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if update.effective_message:
         await update.effective_message.reply_text(
-            "Welcome to Redeem Code Bot.\n\n"
-            "Use the dashboard below to check your points, invite friends, request withdrawals, or support the developer."
+            f"{ce('🔲', Emoji.MENU)} <b>Welcome to Redeem Code Bot</b>\n\n"
+            "Use the dashboard below to check your points, invite friends, request withdrawals, or support the developer.",
+            parse_mode=ParseMode.HTML,
         )
     await _show_dashboard(update, context)
 
@@ -142,14 +147,15 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _send_or_edit(
         update,
         (
-            "Referral Program\n\n"
-            f"Referral points: {referral_points}\n"
-            f"Successful referrals: {successful_referrals}\n\n"
+            f"{ce('🌐', Emoji.GLOBE)} <b>Referral Program</b>\n\n"
+            f"<b>Referral points:</b> {referral_points}\n"
+            f"<b>Successful referrals:</b> {successful_referrals}\n\n"
             "Share this link with friends. You earn points after they start the bot and pass channel verification.\n\n"
-            f"Your referral link:\n{link}"
+            f"<b>Your referral link:</b>\n{h(link)}"
         ),
         reply_markup=back_keyboard(),
         disable_web_page_preview=True,
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -176,13 +182,14 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _send_or_edit(
         update,
         (
-            "Withdraw Google Redeem Code\n\n"
-            f"Available points: {points}\n"
-            f"Required points: {settings.withdraw_cost_points}\n"
-            f"Withdrawal status: {status}\n\n"
-            f"{result.message}"
+            f"{ce('⬇️', Emoji.DOWNLOAD)} <b>Withdraw Google Redeem Code</b>\n\n"
+            f"<b>Available points:</b> {points}\n"
+            f"<b>Required points:</b> {settings.withdraw_cost_points}\n"
+            f"<b>Withdrawal status:</b> {h(status)}\n\n"
+            f"{h(result.message)}"
         ),
         reply_markup=back_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -217,7 +224,10 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if not context.args:
         await update.effective_message.reply_text(
-            "Please send the code you want to claim.\n\nExample:\n/claim BONUS10"
+            f"{ce('📂', Emoji.FOLDER)} <b>Claim Points</b>\n\n"
+            "Please send the code you want to claim.\n\n"
+            "Example:\n<code>/claim BONUS10</code>",
+            parse_mode=ParseMode.HTML,
         )
         return
 
@@ -248,7 +258,11 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not channel_ok:
         await _show_verification(update, context)
         return
-    await update.effective_message.reply_text(result.message if result else "Claim failed. Please try again.")
+    result_message = result.message if result else "Claim failed. Please try again."
+    await update.effective_message.reply_text(
+        f"{ce('✔️', Emoji.CHECK)} {h(result_message)}",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -257,43 +271,44 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     settings = get_settings(context)
     telegram_user = update.effective_user
     lines = [
-        "Redeem Code Bot Help",
+        f"{ce('📂', Emoji.FOLDER)} <b>Redeem Code Bot Help</b>",
         "",
-        "User commands:",
-        "/start - Open your dashboard and verify channels",
-        "/help - Show this command list",
-        "/claim <code> - Redeem a points claim code from an admin",
-        "/paysupport - Get help with Telegram Stars payments",
+        "<b>User commands:</b>",
+        "<code>/start</code> - Open your dashboard and verify channels",
+        "<code>/help</code> - Show this command list",
+        "<code>/claim &lt;code&gt;</code> - Redeem a points claim code from an admin",
+        "<code>/paysupport</code> - Get help with Telegram Stars payments",
         "",
-        "Dashboard options:",
-        "Withdraw - Request a Google redeem code when you have enough points",
-        "Referral - Get your invite link and referral stats",
-        "Support Developer - Send a voluntary Telegram Stars donation",
+        "<b>Dashboard options:</b>",
+        f"{ce('⬇️', Emoji.DOWNLOAD)} Withdraw - Request a Google redeem code when you have enough points",
+        f"{ce('🌐', Emoji.GLOBE)} Referral - Get your invite link and referral stats",
+        f"{ce('📲', Emoji.PHONE)} Support Developer - Send a voluntary Telegram Stars donation",
     ]
     if settings.is_admin(telegram_user.id if telegram_user else None):
         lines.extend(
             [
                 "",
-                "Admin commands:",
-                "/admin - Show the admin command menu",
-                "/stats - Show bot statistics",
-                "/broadcast <message> - Send a message to all registered users",
-                "/genpoints <points> [max_uses] [custom_code] - Create a points claim code",
-                "/addcodes - Add Google redeem code inventory",
-                "/withdrawals - List pending withdrawal requests",
-                "/approve <id> - Approve a withdrawal and send a code",
-                "/reject <id> [reason] - Reject a withdrawal without deducting points",
+                "<b>Admin commands:</b>",
+                "<code>/admin</code> - Show the admin command menu",
+                "<code>/stats</code> - Show bot statistics",
+                "<code>/broadcast &lt;message&gt;</code> - Send a message to all registered users",
+                "<code>/genpoints &lt;points&gt; [max_uses] [custom_code]</code> - Create a points claim code",
+                "<code>/addcodes</code> - Add Google redeem code inventory",
+                "<code>/withdrawals</code> - List pending withdrawal requests",
+                "<code>/approve &lt;id&gt;</code> - Approve a withdrawal and send a code",
+                "<code>/reject &lt;id&gt; [reason]</code> - Reject a withdrawal without deducting points",
             ]
         )
-    await update.effective_message.reply_text("\n".join(lines))
+    await update.effective_message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message:
         await update.effective_message.reply_text(
-            "Payment support\n\n"
+            f"{ce('📲', Emoji.PHONE)} <b>Payment support</b>\n\n"
             "If you had a problem with a Telegram Stars payment, send the admin your issue details, payment date, "
-            "and Telegram charge ID if it is visible in your receipt."
+            "and Telegram charge ID if it is visible in your receipt.",
+            parse_mode=ParseMode.HTML,
         )
 
 

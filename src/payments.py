@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from src.common import get_database, get_settings
 from src.service import RedeemService
+from src.ui import Emoji, ce
 
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -46,10 +48,15 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if stored is None:
         await message.reply_text(
-            "Payment received, but I could not match it to an active invoice. Please use /paysupport."
+            f"{ce('📲', Emoji.PHONE)} Payment received, but I could not match it to an active invoice. "
+            "Please use /paysupport.",
+            parse_mode=ParseMode.HTML,
         )
         return
-    await message.reply_text("Thank you for supporting the developer. Your Telegram Stars payment was recorded.")
+    await message.reply_text(
+        f"{ce('✔️', Emoji.CHECK)} Thank you for supporting the developer. Your Telegram Stars payment was recorded.",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 def register_payment_handlers(application) -> None:  # type: ignore[no-untyped-def]
