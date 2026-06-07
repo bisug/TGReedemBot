@@ -1,6 +1,7 @@
 services:
   - type: worker
     name: tg-redeem-bot
+    region: singapore
     runtime: docker
     repo: https://github.com/bisug/TGReedemBot.git
     dockerfilePath: ./Dockerfile
