@@ -1,0 +1,50 @@
+{
+  "name": "redeem-code-bot",
+  "description": "Polling Telegram bot for referral points and redeem code withdrawals.",
+  "stack": "container",
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Telegram bot token from BotFather.",
+      "required": true
+    },
+    "BOT_USERNAME": {
+      "description": "Telegram bot username without @.",
+      "required": true
+    },
+    "ADMIN_IDS": {
+      "description": "Comma-separated Telegram user IDs allowed to use admin commands.",
+      "required": true
+    },
+    "DATABASE_URL": {
+      "description": "SQLite database URL. Heroku filesystem is ephemeral, so use an attached persistent volume or external DB for production.",
+      "required": false,
+      "value": "sqlite+aiosqlite:///./data/bot.db"
+    },
+    "REQUIRED_CHANNEL_IDS": {
+      "description": "Comma-separated required channel usernames or numeric IDs.",
+      "required": false
+    },
+    "REFERRAL_REWARD_POINTS": {
+      "description": "Points awarded after a referred user passes verification.",
+      "required": false,
+      "value": "1"
+    },
+    "WITHDRAW_COST_POINTS": {
+      "description": "Minimum points required to request a redeem code.",
+      "required": false,
+      "value": "5"
+    },
+    "SUPPORT_STARS_AMOUNT": {
+      "description": "Telegram Stars amount for the Support Developer invoice.",
+      "required": false,
+      "value": "10"
+    }
+  }
+}
+
