@@ -12,7 +12,7 @@ from src.common import (
     has_required_channels,
     parse_referral_arg,
 )
-from src.keyboards import back_keyboard, dashboard_keyboard, verification_keyboard
+from src.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
 from src.service import RedeemService
 from src.ui import Emoji, ce, h
 
@@ -26,6 +26,98 @@ async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
                 raise
     elif update.effective_message:
         await update.effective_message.reply_text(text, **kwargs)
+
+
+def _is_admin(update: Update, settings) -> bool:  # type: ignore[no-untyped-def]
+    telegram_user = update.effective_user
+    return settings.is_admin(telegram_user.id if telegram_user else None)
+
+
+def _help_text(*, is_admin: bool) -> str:
+    lines = [
+        f"{ce('📂', Emoji.FOLDER)} <b>Help</b>",
+        "",
+        "This bot lets you earn points, invite friends, and request Google redeem codes.",
+        "",
+        "<b>What you can do:</b>",
+        f"{ce('✔️', Emoji.CHECK)} Verify required channels",
+        f"{ce('🌐', Emoji.GLOBE)} Share your referral link",
+        f"{ce('📂', Emoji.FOLDER)} Claim admin points codes",
+        f"{ce('⬇️', Emoji.DOWNLOAD)} Request a redeem code withdrawal",
+        f"{ce('📲', Emoji.PHONE)} Support the developer with Telegram Stars",
+        "",
+        "Use the Commands button to see exact command formats.",
+    ]
+    if is_admin:
+        lines.extend(
+            [
+                "",
+                f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin access enabled</b>",
+                "You can open the Admin Panel from the dashboard.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _commands_intro_text(*, is_admin: bool) -> str:
+    lines = [
+        f"{ce('🔲', Emoji.MENU)} <b>Commands</b>",
+        "",
+        "Choose which command section you want to view.",
+        "",
+        f"{ce('📂', Emoji.FOLDER)} User Commands - available to everyone",
+    ]
+    if is_admin:
+        lines.append(f"{ce('📂', Emoji.FOLDER_ALT)} Admin Commands - visible only to configured admins")
+    return "\n".join(lines)
+
+
+def _user_commands_text() -> str:
+    return "\n".join(
+        [
+            f"{ce('📂', Emoji.FOLDER)} <b>User Commands</b>",
+            "",
+            "<code>/start</code> - Open the dashboard",
+            "<code>/help</code> - Open help",
+            "<code>/claim &lt;code&gt;</code> - Redeem a points claim code",
+            "<code>/paysupport</code> - Get help with Telegram Stars payments",
+            "",
+            "<b>Dashboard buttons:</b>",
+            f"{ce('⬇️', Emoji.DOWNLOAD)} Withdraw - Request a Google redeem code",
+            f"{ce('🌐', Emoji.GLOBE)} Referral - Get your invite link and stats",
+            f"{ce('📲', Emoji.PHONE)} Support Developer - Send Telegram Stars support",
+            f"{ce('📂', Emoji.FOLDER)} Help - Learn how the bot works",
+            f"{ce('🔲', Emoji.MENU)} Commands - View user/admin command sections",
+        ]
+    )
+
+
+def _admin_commands_text() -> str:
+    return "\n".join(
+        [
+            f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin Commands</b>",
+            "",
+            "<code>/admin</code> - Show the admin menu",
+            "<code>/stats</code> - Show users, points, stock, withdrawals, and Stars totals",
+            "<code>/broadcast &lt;message&gt;</code> - Send a message to all registered users",
+            "<code>/genpoints &lt;points&gt; [max_uses] [custom_code]</code> - Create a claim code for points",
+            "<code>/addcodes</code> - Add Google redeem code inventory, one code per line",
+            "<code>/stock</code> - Show redeem code stock counts",
+            "<code>/withdrawals</code> - List pending withdrawal requests",
+            "<code>/approve &lt;withdrawal_id&gt;</code> - Approve a request and send a code",
+            "<code>/reject &lt;withdrawal_id&gt; [reason]</code> - Reject a request without deducting points",
+        ]
+    )
+
+
+async def _require_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    settings = get_settings(context)
+    if _is_admin(update, settings):
+        await answer_callback(update)
+        return True
+    if update.callback_query:
+        await update.callback_query.answer("Only admins can open this section.", show_alert=True)
+    return False
 
 
 async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -66,9 +158,10 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
             f"<b>Available points:</b> {points}\n"
             f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
-            "Earn points from referrals and claim codes. When you have enough points, request a Google redeem code."
+            "Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.\n\n"
+            "Use Help for a quick guide or Commands for exact command formats."
         ),
-        reply_markup=dashboard_keyboard(),
+        reply_markup=dashboard_keyboard(is_admin=_is_admin(update, settings)),
         parse_mode=ParseMode.HTML,
     )
 
@@ -101,7 +194,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message:
         await update.effective_message.reply_text(
             f"{ce('🔲', Emoji.MENU)} <b>Welcome to Redeem Code Bot</b>\n\n"
-            "Use the dashboard below to check your points, invite friends, request withdrawals, or support the developer.",
+            "Use the dashboard below to check your points, invite friends, request withdrawals, view help, or open commands.",
             parse_mode=ParseMode.HTML,
         )
     await _show_dashboard(update, context)
@@ -129,6 +222,61 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def dashboard_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await answer_callback(update)
     await _show_dashboard(update, context)
+
+
+async def help_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await answer_callback(update)
+    settings = get_settings(context)
+    await _send_or_edit(
+        update,
+        _help_text(is_admin=_is_admin(update, settings)),
+        reply_markup=back_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await answer_callback(update)
+    settings = get_settings(context)
+    is_admin = _is_admin(update, settings)
+    await _send_or_edit(
+        update,
+        _commands_intro_text(is_admin=is_admin),
+        reply_markup=commands_keyboard(is_admin=is_admin),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def user_commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await answer_callback(update)
+    await _send_or_edit(
+        update,
+        _user_commands_text(),
+        reply_markup=back_keyboard("dashboard:commands"),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def admin_commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin_callback(update, context):
+        return
+    await _send_or_edit(
+        update,
+        _admin_commands_text(),
+        reply_markup=back_keyboard("dashboard:commands"),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def admin_panel_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin_callback(update, context):
+        return
+    await _send_or_edit(
+        update,
+        _admin_commands_text(),
+        reply_markup=back_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -274,37 +422,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if update.effective_message is None:
         return
     settings = get_settings(context)
-    telegram_user = update.effective_user
-    lines = [
-        f"{ce('📂', Emoji.FOLDER)} <b>Redeem Code Bot Help</b>",
-        "",
-        "<b>User commands:</b>",
-        "<code>/start</code> - Open your dashboard and verify channels",
-        "<code>/help</code> - Show this command list",
-        "<code>/claim &lt;code&gt;</code> - Redeem a points claim code from an admin",
-        "<code>/paysupport</code> - Get help with Telegram Stars payments",
-        "",
-        "<b>Dashboard options:</b>",
-        f"{ce('⬇️', Emoji.DOWNLOAD)} Withdraw - Request a Google redeem code when you have enough points",
-        f"{ce('🌐', Emoji.GLOBE)} Referral - Get your invite link and referral stats",
-        f"{ce('📲', Emoji.PHONE)} Support Developer - Send a voluntary Telegram Stars donation",
-    ]
-    if settings.is_admin(telegram_user.id if telegram_user else None):
-        lines.extend(
-            [
-                "",
-                "<b>Admin commands:</b>",
-                "<code>/admin</code> - Show the admin command menu",
-                "<code>/stats</code> - Show bot statistics",
-                "<code>/broadcast &lt;message&gt;</code> - Send a message to all registered users",
-                "<code>/genpoints &lt;points&gt; [max_uses] [custom_code]</code> - Create a points claim code",
-                "<code>/addcodes</code> - Add Google redeem code inventory",
-                "<code>/withdrawals</code> - List pending withdrawal requests",
-                "<code>/approve &lt;id&gt;</code> - Approve a withdrawal and send a code",
-                "<code>/reject &lt;id&gt; [reason]</code> - Reject a withdrawal without deducting points",
-            ]
-        )
-    await update.effective_message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+    is_admin = _is_admin(update, settings)
+    await update.effective_message.reply_text(
+        _help_text(is_admin=is_admin),
+        reply_markup=commands_keyboard(is_admin=is_admin),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -324,6 +447,11 @@ def register_user_handlers(application) -> None:  # type: ignore[no-untyped-def]
     application.add_handler(CommandHandler("paysupport", pay_support))
     application.add_handler(CallbackQueryHandler(verify, pattern="^verify$"))
     application.add_handler(CallbackQueryHandler(dashboard_home, pattern="^dashboard:home$"))
+    application.add_handler(CallbackQueryHandler(help_screen, pattern="^dashboard:help$"))
+    application.add_handler(CallbackQueryHandler(commands_screen, pattern="^dashboard:commands$"))
+    application.add_handler(CallbackQueryHandler(admin_panel_screen, pattern="^dashboard:admin$"))
+    application.add_handler(CallbackQueryHandler(user_commands_screen, pattern="^commands:user$"))
+    application.add_handler(CallbackQueryHandler(admin_commands_screen, pattern="^commands:admin$"))
     application.add_handler(CallbackQueryHandler(withdraw_screen, pattern="^dashboard:withdraw$"))
     application.add_handler(CallbackQueryHandler(referral_screen, pattern="^dashboard:referral$"))
     application.add_handler(CallbackQueryHandler(support_developer, pattern="^dashboard:support$"))
