@@ -1,6 +1,6 @@
 # Redeem Code Telegram Bot
 
-Modular Telegram bot built with `python-telegram-bot`, async SQLAlchemy, and SQLite.
+Modular Telegram bot built with `python-telegram-bot`, async SQLAlchemy, and PostgreSQL.
 
 The bot lets users verify required channel membership, earn points from verified referrals, request Google redeem code withdrawals, and support the developer through Telegram Stars.
 
@@ -13,6 +13,7 @@ The bot lets users verify required channel membership, earn points from verified
 - Admin-approved withdrawals.
 - Telegram Stars support invoices and `/paysupport`.
 - Polling runtime for straightforward local and server deployment.
+- PostgreSQL storage through `DATABASE_URL`.
 
 ## Setup
 
@@ -23,7 +24,15 @@ python -m pip install -e .
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with your bot token, admin Telegram IDs, and required channels. `BOT_USERNAME` is optional because the bot fetches its own username from Telegram on startup.
+Edit `.env` with your bot token, admin Telegram IDs, PostgreSQL URL, and required channels. `BOT_USERNAME` is optional because the bot fetches its own username from Telegram on startup.
+
+`DATABASE_URL` must point to PostgreSQL. These formats are accepted:
+
+```text
+postgresql+asyncpg://user:password@host:5432/database
+postgresql://user:password@host:5432/database
+postgres://user:password@host:5432/database
+```
 
 The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHANNEL_IDS`. For private channels, add the bot as an admin and use the numeric channel ID.
 
@@ -33,7 +42,7 @@ The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHAN
 redeem-bot
 ```
 
-The bot initializes the SQLite schema on startup and then starts Telegram polling.
+The bot initializes the PostgreSQL schema on startup and then starts Telegram polling.
 
 ## Docker
 
@@ -52,12 +61,12 @@ This project is configured for a Heroku container worker dyno.
 
 ```powershell
 heroku stack:set container -a your-app-name
-heroku config:set BOT_TOKEN=... ADMIN_IDS=... -a your-app-name
+heroku config:set BOT_TOKEN=... ADMIN_IDS=... DATABASE_URL=... -a your-app-name
 git push heroku main
 heroku ps:scale worker=1 -a your-app-name
 ```
 
-Heroku's filesystem is ephemeral. SQLite works for demos, but production deployments should use persistent storage or migrate the database URL to an external database.
+Use a managed PostgreSQL database for Heroku. If Heroku provides a `postgres://...` URL, the bot automatically normalizes it for the async PostgreSQL driver.
 
 ## Render
 
@@ -69,15 +78,10 @@ Render will create a worker service from `render.yaml`. During setup, enter:
 
 - `BOT_TOKEN`
 - `ADMIN_IDS`
+- `DATABASE_URL`
 - `REQUIRED_CHANNEL_IDS`
 
-The Blueprint attaches a 1 GB persistent disk at `/app/data` and stores SQLite at:
-
-```text
-sqlite+aiosqlite:////app/data/bot.db
-```
-
-Because this bot uses Telegram polling, deploy it as a background worker, not a web service.
+Use a Render PostgreSQL database or any external PostgreSQL provider, then set `DATABASE_URL` on the worker. Because this bot uses Telegram polling, deploy it as a background worker, not a web service.
 
 ## Admin Commands
 

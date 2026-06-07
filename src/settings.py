@@ -41,6 +41,21 @@ def _env_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer") from exc
 
 
+def normalize_database_url(database_url: str) -> str:
+    value = database_url.strip()
+    if not value:
+        raise ValueError("DATABASE_URL is required")
+    if value.startswith("postgres://"):
+        return "postgresql+asyncpg://" + value.removeprefix("postgres://")
+    if value.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + value.removeprefix("postgresql://")
+    if value.startswith("postgres+asyncpg://"):
+        return "postgresql+asyncpg://" + value.removeprefix("postgres+asyncpg://")
+    if value.startswith("postgresql+asyncpg://"):
+        return value
+    raise ValueError("DATABASE_URL must be a PostgreSQL URL")
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     bot_token: str
@@ -51,7 +66,7 @@ class Settings:
     bot_can_join_groups: bool | None = None
     bot_can_read_all_group_messages: bool | None = None
     bot_supports_inline_queries: bool | None = None
-    database_url: str = "sqlite+aiosqlite:///./data/bot.db"
+    database_url: str = ""
     required_channel_ids: tuple[int | str, ...] = ()
     referral_reward_points: int = 1
     withdraw_cost_points: int = 5
@@ -64,12 +79,13 @@ class Settings:
             raise ValueError("BOT_TOKEN is required")
 
         bot_username = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
+        database_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
 
         return cls(
             bot_token=bot_token,
             admin_ids=_parse_ints(os.getenv("ADMIN_IDS")),
             bot_username=bot_username,
-            database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db").strip(),
+            database_url=database_url,
             required_channel_ids=_parse_channel_ids(os.getenv("REQUIRED_CHANNEL_IDS")),
             referral_reward_points=_env_int("REFERRAL_REWARD_POINTS", 1),
             withdraw_cost_points=_env_int("WITHDRAW_COST_POINTS", 5),

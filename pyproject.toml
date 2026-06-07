@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "python-telegram-bot==22.7",
     "SQLAlchemy==2.0.50",
-    "aiosqlite==0.22.1",
+    "asyncpg==0.31.0",
 ]
 
 [project.scripts]

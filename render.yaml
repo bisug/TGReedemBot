@@ -7,10 +7,6 @@ services:
     dockerContext: .
     dockerCommand: python -m src
     autoDeploy: false
-    disk:
-      name: bot-data
-      mountPath: /app/data
-      sizeGB: 1
     envVars:
       - key: BOT_TOKEN
         sync: false
@@ -19,7 +15,7 @@ services:
       - key: REQUIRED_CHANNEL_IDS
         sync: false
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:////app/data/bot.db
+        sync: false
       - key: REFERRAL_REWARD_POINTS
         value: "1"
       - key: WITHDRAW_COST_POINTS

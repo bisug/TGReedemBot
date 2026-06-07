@@ -22,9 +22,8 @@
       "required": true
     },
     "DATABASE_URL": {
-      "description": "SQLite database URL. Heroku filesystem is ephemeral, so use an attached persistent volume or external DB for production.",
-      "required": false,
-      "value": "sqlite+aiosqlite:///./data/bot.db"
+      "description": "PostgreSQL URL. postgres:// and postgresql:// URLs are accepted and normalized to asyncpg.",
+      "required": true
     },
     "REQUIRED_CHANNEL_IDS": {
       "description": "Comma-separated required channel usernames or numeric IDs.",
