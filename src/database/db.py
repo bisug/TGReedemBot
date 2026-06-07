@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.models import Base
+from src.database.models import Base
 
 
 class Database:

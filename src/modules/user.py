@@ -5,16 +5,16 @@ from telegram.error import BadRequest
 from telegram.constants import ParseMode
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
-from src.common import (
+from src.helpers.common import (
     answer_callback,
     get_database,
     get_settings,
     has_required_channels,
     parse_referral_arg,
 )
-from src.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
-from src.service import RedeemService
-from src.ui import Emoji, ce, h
+from src.helpers.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
+from src.services import RedeemService
+from src.utils.ui import Emoji, ce, h
 
 
 async def _send_or_edit(update: Update, text: str, **kwargs) -> None:

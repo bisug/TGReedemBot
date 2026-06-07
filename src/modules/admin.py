@@ -7,10 +7,10 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import CommandHandler, ContextTypes
 
-from src.common import get_database, get_settings
-from src.models import User
-from src.service import RedeemService
-from src.ui import Emoji, ce, h
+from src.database.models import User
+from src.helpers.common import get_database, get_settings
+from src.services import RedeemService
+from src.utils.ui import Emoji, ce, h
 
 
 async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

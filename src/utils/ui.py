@@ -46,4 +46,3 @@ def styled_button(
         icon_custom_emoji_id=emoji_id,
         style=style,
     )
-

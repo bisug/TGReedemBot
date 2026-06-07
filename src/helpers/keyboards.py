@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.settings import Settings
-from src.ui import Emoji, styled_button
+from src.config import Settings
+from src.utils.ui import Emoji, styled_button
 
 
 def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:

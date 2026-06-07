@@ -5,8 +5,8 @@ from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from src.db import Database
-from src.settings import Settings
+from src.config import Settings
+from src.database import Database
 
 
 def get_settings(context: ContextTypes.DEFAULT_TYPE) -> Settings:

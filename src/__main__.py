@@ -3,8 +3,8 @@ from __future__ import annotations
 from telegram import Update
 
 from src.app import build_application
-from src.db import Database
-from src.settings import Settings
+from src.config import Settings
+from src.database import Database
 
 
 def main() -> None:

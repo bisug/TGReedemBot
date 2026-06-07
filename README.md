@@ -44,6 +44,21 @@ redeem-bot
 
 The bot initializes the PostgreSQL schema on startup and then starts Telegram polling.
 
+## Project Structure
+
+```text
+src/
+  app.py              # Telegram application wiring
+  __main__.py         # polling entrypoint
+  config.py           # public config import and .env-backed settings
+  core/               # settings implementation
+  database/           # SQLAlchemy engine and models
+  services/           # business logic for points, referrals, withdrawals
+  helpers/            # Telegram helper functions and keyboards
+  modules/            # bot feature modules: user, admin, payments
+  utils/              # shared UI/text utilities
+```
+
 ## Docker
 
 Build and run locally:

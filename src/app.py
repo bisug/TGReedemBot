@@ -4,11 +4,11 @@ from dataclasses import replace
 
 from telegram.ext import Application, ApplicationBuilder
 
-from src.admin import register_admin_handlers
-from src.db import Database
-from src.handlers import register_user_handlers
-from src.payments import register_payment_handlers
-from src.settings import Settings
+from src.config import Settings
+from src.database import Database
+from src.modules.admin import register_admin_handlers
+from src.modules.payments import register_payment_handlers
+from src.modules.user import register_user_handlers
 
 
 def build_application(

@@ -9,7 +9,7 @@ from uuid import uuid4
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import (
+from src.database.models import (
     ClaimCode,
     ClaimRedemption,
     PointLedger,
@@ -20,7 +20,7 @@ from src.models import (
     Withdrawal,
     utcnow,
 )
-from src.settings import Settings
+from src.config import Settings
 
 
 @dataclass(frozen=True, slots=True)

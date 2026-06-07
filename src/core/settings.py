@@ -4,6 +4,10 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _split_csv(value: str | None) -> tuple[str, ...]:
     if not value:

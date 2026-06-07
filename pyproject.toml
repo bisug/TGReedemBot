@@ -8,6 +8,7 @@ dependencies = [
     "python-telegram-bot==22.7",
     "SQLAlchemy==2.0.50",
     "asyncpg==0.31.0",
+    "python-dotenv==1.2.2",
 ]
 
 [project.scripts]

@@ -4,9 +4,9 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
-from src.common import get_database, get_settings
-from src.service import RedeemService
-from src.ui import Emoji, ce
+from src.helpers.common import get_database, get_settings
+from src.services import RedeemService
+from src.utils.ui import Emoji, ce
 
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
