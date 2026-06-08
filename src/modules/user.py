@@ -6,6 +6,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from src.config import Settings
+from src.domain import WithdrawalStatus
 from src.helpers.common import (
     answer_callback,
     get_database,
@@ -14,7 +15,13 @@ from src.helpers.common import (
     has_required_channels,
     parse_referral_arg,
 )
-from src.helpers.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
+from src.helpers.keyboards import (
+    back_keyboard,
+    commands_keyboard,
+    dashboard_keyboard,
+    verification_keyboard,
+    withdraw_keyboard,
+)
 from src.helpers.security import enforce_rate_limit, require_private_chat
 from src.services import RedeemService
 from src.utils.limits import is_valid_claim_code
@@ -87,6 +94,7 @@ def _user_commands_text() -> str:
                 "/start - Open the dashboard\n"
                 "/help - Open help\n"
                 "/claim <code> - Redeem a points claim code\n"
+                "/withdraw - Check withdrawal status and request a code\n"
                 "/paysupport - Get help with Telegram Stars payments"
             ),
             "",
@@ -109,6 +117,8 @@ def _admin_commands_text() -> str:
                 "/admin - Show the admin menu\n"
                 "/stats - Show users, points, stock, withdrawals, and Stars totals\n"
                 "/broadcast <message> - Send a message to all registered users\n"
+                "Reply /broadcast - Broadcast the replied message\n"
+                "?broadcast <message> - Alternate broadcast prefix\n"
                 "/genpoints <points> [max_uses] [custom_code] - Create a claim code for points\n"
                 "/addcodes - Add Google redeem code inventory, one code per line\n"
                 "/stock - Show redeem code stock counts\n"
@@ -393,6 +403,82 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+def _withdrawal_status_hint(status: str) -> str:
+    if status == WithdrawalStatus.PENDING:
+        return "Your request is waiting for admin review."
+    if status == WithdrawalStatus.RESERVED:
+        return "Your redeem code is being prepared for delivery."
+    if status == WithdrawalStatus.DELIVERY_FAILED:
+        return "Delivery failed. An admin can retry delivery or reject the request."
+    if status == WithdrawalStatus.FULFILLED:
+        return "Your last withdrawal was completed."
+    if status == WithdrawalStatus.REJECTED:
+        return "Your last withdrawal was rejected. Your points were not deducted."
+    return "Check back here for the latest withdrawal status."
+
+
+async def _show_withdrawal_screen(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    create_request: bool = False,
+) -> None:
+    settings = get_settings(context)
+    db = get_database(context)
+    telegram_user = update.effective_user
+    if telegram_user is None:
+        return
+
+    result_message: str | None = None
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            user = await service.get_user_by_telegram_id(telegram_user.id)
+            if user is None:
+                await _show_verification(update, context)
+                return
+            if create_request:
+                result = await service.create_withdrawal_request(telegram_user.id)
+                result_message = result.message
+                latest = result.withdrawal or await service.latest_withdrawal_for_user(user.id)
+            else:
+                latest = await service.latest_withdrawal_for_user(user.id)
+            points = user.point_balance
+
+    has_open_request = latest is not None and latest.status in WithdrawalStatus.OPEN
+    can_request = points >= settings.withdraw_cost_points and not has_open_request
+    points_needed = max(settings.withdraw_cost_points - points, 0)
+
+    if latest is None:
+        status_line = "No request yet"
+        status_hint = "You can request a Google redeem code when you have enough points."
+    else:
+        status_line = f"#{latest.id} - {latest.status}"
+        status_hint = _withdrawal_status_hint(latest.status)
+
+    if result_message:
+        guidance = result_message
+    elif has_open_request:
+        guidance = status_hint
+    elif can_request:
+        guidance = "You have enough points. Press Request Code to send your request to admins."
+    else:
+        guidance = f"You need {points_needed} more point(s). Use referrals or claim codes, then return here."
+
+    await _send_or_edit(
+        update,
+        (
+            f"{ce('💳', Emoji.CREDIT_CARD)} <b>Withdraw Google Redeem Code</b>\n\n"
+            f"<b>Available points:</b> {points}\n"
+            f"<b>Required points:</b> {settings.withdraw_cost_points}\n"
+            f"<b>Withdrawal status:</b> {h(status_line)}\n\n"
+            f"{quote_block(guidance)}"
+        ),
+        reply_markup=withdraw_keyboard(can_request=can_request, show_referral=not can_request and not has_open_request),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await require_private_chat(update):
         return
@@ -401,36 +487,18 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await answer_callback(update)
     if not await _ensure_verified_user(update, context):
         return
-    settings = get_settings(context)
-    db = get_database(context)
-    telegram_user = update.effective_user
-    if telegram_user is None:
+    await _show_withdrawal_screen(update, context)
+
+
+async def withdraw_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
         return
-
-    async with db.session() as session:
-        async with session.begin():
-            service = RedeemService(session, settings)
-            user = await service.get_user_by_telegram_id(telegram_user.id)
-            if user is None:
-                await _show_verification(update, context)
-                return
-            result = await service.create_withdrawal_request(telegram_user.id)
-            latest = result.withdrawal or await service.latest_withdrawal_for_user(user.id)
-            points = user.point_balance
-
-    status = latest.status if latest is not None else "none"
-    await _send_or_edit(
-        update,
-        (
-            f"{ce('💳', Emoji.CREDIT_CARD)} <b>Withdraw Google Redeem Code</b>\n\n"
-            f"<b>Available points:</b> {points}\n"
-            f"<b>Required points:</b> {settings.withdraw_cost_points}\n"
-            f"<b>Withdrawal status:</b> {h(status)}\n\n"
-            f"{quote_block(result.message)}"
-        ),
-        reply_markup=back_keyboard(),
-        parse_mode=ParseMode.HTML,
-    )
+    if not await enforce_rate_limit(update, context, "withdraw_request", limit=3, window_seconds=60):
+        return
+    await answer_callback(update)
+    if not await _ensure_verified_user(update, context):
+        return
+    await _show_withdrawal_screen(update, context, create_request=True)
 
 
 async def support_developer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -557,6 +625,7 @@ def register_user_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("claim", claim_command))
+    application.add_handler(CommandHandler("withdraw", withdraw_screen))
     application.add_handler(CommandHandler("paysupport", pay_support))
     application.add_handler(CallbackQueryHandler(verify, pattern="^verify$"))
     application.add_handler(CallbackQueryHandler(missing_join_link, pattern="^join:missing:\\d+$"))
@@ -567,5 +636,6 @@ def register_user_handlers(application: Application) -> None:
     application.add_handler(CallbackQueryHandler(user_commands_screen, pattern="^commands:user$"))
     application.add_handler(CallbackQueryHandler(admin_commands_screen, pattern="^commands:admin$"))
     application.add_handler(CallbackQueryHandler(withdraw_screen, pattern="^dashboard:withdraw$"))
+    application.add_handler(CallbackQueryHandler(withdraw_request, pattern="^dashboard:withdraw:request$"))
     application.add_handler(CallbackQueryHandler(referral_screen, pattern="^dashboard:referral$"))
     application.add_handler(CallbackQueryHandler(support_developer, pattern="^dashboard:support$"))

@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from telegram import Bot, Update
+from telegram import Bot, Message, MessageEntity, Update
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TelegramError
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from src.config import Settings
 from src.database import Database
@@ -34,6 +34,14 @@ class ApprovalDeliveryPlan:
     should_deliver: bool
 
 
+@dataclass(frozen=True, slots=True)
+class BroadcastPayload:
+    text: str | None = None
+    entities: tuple[MessageEntity, ...] = ()
+    copy_from_chat_id: int | str | None = None
+    copy_message_id: int | None = None
+
+
 async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not await require_private_chat(update):
         return False
@@ -58,10 +66,88 @@ def _command_body(update: Update) -> str:
     return parts[1] if len(parts) > 1 else ""
 
 
-async def _send_broadcast_message(bot: Bot, telegram_id: int, text: str) -> bool:
+def _utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _broadcast_command_end(message: Message) -> int | None:
+    text = message.text or ""
+    question_command = "?broadcast"
+    if text.startswith(question_command) and (
+        len(text) == len(question_command) or text[len(question_command)].isspace()
+    ):
+        return len(question_command)
+
+    for entity in message.entities or ():
+        if entity.type != MessageEntity.BOT_COMMAND or entity.offset != 0:
+            continue
+        command_text = text[: entity.length]
+        command_name = command_text.split("@", maxsplit=1)[0]
+        if command_name == "/broadcast":
+            return len(command_text)
+    return None
+
+
+def _body_start_index(text: str, command_end: int) -> int:
+    body_start = command_end
+    while body_start < len(text) and text[body_start].isspace():
+        body_start += 1
+    return body_start
+
+
+def _slice_entities(
+    text: str,
+    entities: tuple[MessageEntity, ...] | list[MessageEntity] | None,
+    start_index: int,
+) -> tuple[MessageEntity, ...]:
+    if not entities:
+        return ()
+
+    start_offset = _utf16_length(text[:start_index])
+    end_offset = _utf16_length(text)
+    kept = [
+        entity
+        for entity in entities
+        if entity.offset >= start_offset and entity.offset + entity.length <= end_offset
+    ]
+    if not kept:
+        return ()
+    return tuple(MessageEntity.shift_entities(-start_offset, kept))
+
+
+def _broadcast_payload_from_message(message: Message) -> BroadcastPayload | None:
+    text = message.text or ""
+    command_end = _broadcast_command_end(message)
+    if command_end is not None:
+        body_start = _body_start_index(text, command_end)
+        body = text[body_start:]
+        if body:
+            return BroadcastPayload(
+                text=body,
+                entities=_slice_entities(text, message.entities, body_start),
+            )
+
+    if message.reply_to_message is not None:
+        reply = message.reply_to_message
+        return BroadcastPayload(copy_from_chat_id=reply.chat_id, copy_message_id=reply.message_id)
+    return None
+
+
+async def _send_broadcast_message(bot: Bot, telegram_id: int, payload: BroadcastPayload) -> bool:
     for attempt in range(2):
         try:
-            await bot.send_message(chat_id=telegram_id, text=text)
+            if payload.copy_message_id is not None and payload.copy_from_chat_id is not None:
+                await bot.copy_message(
+                    chat_id=telegram_id,
+                    from_chat_id=payload.copy_from_chat_id,
+                    message_id=payload.copy_message_id,
+                )
+            else:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=payload.text or "",
+                    entities=payload.entities or None,
+                )
             return True
         except RetryAfter as exc:
             if attempt:
@@ -74,7 +160,7 @@ async def _send_broadcast_message(bot: Bot, telegram_id: int, text: str) -> bool
     return False
 
 
-async def _broadcast_many(bot: Bot, user_ids: list[int], text: str, *, concurrency: int) -> tuple[int, int]:
+async def _broadcast_many(bot: Bot, user_ids: list[int], payload: BroadcastPayload, *, concurrency: int) -> tuple[int, int]:
     if not user_ids:
         return 0, 0
 
@@ -87,7 +173,7 @@ async def _broadcast_many(bot: Bot, user_ids: list[int], text: str, *, concurren
         while next_index < len(user_ids):
             telegram_id = user_ids[next_index]
             next_index += 1
-            if await _send_broadcast_message(bot, telegram_id, text):
+            if await _send_broadcast_message(bot, telegram_id, payload):
                 sent += 1
             else:
                 failed += 1
@@ -103,6 +189,8 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     commands = code_block(
         "/stats - Show users, points, stock, withdrawals, and Stars totals\n"
         "/broadcast <message> - Send a message to all registered users\n"
+        "Reply /broadcast - Broadcast the replied message\n"
+        "?broadcast <message> - Alternate broadcast prefix\n"
         "/genpoints <points> [max_uses] [custom_code] - Create a points claim code\n"
         "/addcodes - Add Google redeem code inventory, one code per line\n"
         "/stock - Show redeem code inventory counts\n"
@@ -183,16 +271,19 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update, context):
         return
-    body = _command_body(update)
-    if not body:
+    message = update.effective_message
+    if message is None:
+        return
+    payload = _broadcast_payload_from_message(message)
+    if payload is None:
         await update.effective_message.reply_text(
             f"{ce('🔔', Emoji.BELL)} <b>Broadcast</b>\n\n"
-            "Please include the message you want to broadcast.\n\n"
-            f"<b>Example:</b>\n{code_block('/broadcast New claim code is live.')}",
+            "Please include the message you want to broadcast or reply to a message with /broadcast.\n\n"
+            f"<b>Examples:</b>\n{code_block('/broadcast New claim code is live.\n?broadcast New claim code is live.')}",
             parse_mode=ParseMode.HTML,
         )
         return
-    if len(body) > MAX_BROADCAST_LENGTH:
+    if payload.text is not None and len(payload.text) > MAX_BROADCAST_LENGTH:
         await update.effective_message.reply_text(
             f"{ce('⚠️', Emoji.WARNING)} <b>Broadcast too long.</b>\n\n"
             f"{quote_block(f'Keep broadcasts under {MAX_BROADCAST_LENGTH} characters.')}",
@@ -210,7 +301,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     sent, failed = await _broadcast_many(
         context.bot,
         user_ids,
-        body,
+        payload,
         concurrency=settings.broadcast_concurrency,
     )
 
@@ -511,6 +602,7 @@ def register_admin_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("admin", admin_menu))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^\?broadcast(?:\s|$)"), broadcast))
     application.add_handler(CommandHandler("genpoints", genpoints))
     application.add_handler(CommandHandler("addcodes", add_codes))
     application.add_handler(CommandHandler("stock", stock))

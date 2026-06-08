@@ -102,3 +102,32 @@ def back_keyboard(callback_data: str = "dashboard:home") -> InlineKeyboardMarkup
     return InlineKeyboardMarkup(
         [[styled_button("Back", callback_data=callback_data, emoji_id=Emoji.BACK, style="primary")]]
     )
+
+
+@lru_cache(maxsize=8)
+def withdraw_keyboard(*, can_request: bool = False, show_referral: bool = False) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if can_request:
+        rows.append(
+            [
+                styled_button(
+                    "Request Code",
+                    callback_data="dashboard:withdraw:request",
+                    emoji_id=Emoji.CREDIT_CARD,
+                    style="success",
+                )
+            ]
+        )
+    elif show_referral:
+        rows.append(
+            [
+                styled_button(
+                    "Referral",
+                    callback_data="dashboard:referral",
+                    emoji_id=Emoji.PEOPLE_HUGGING,
+                    style="success",
+                )
+            ]
+        )
+    rows.append([styled_button("Back", callback_data="dashboard:home", emoji_id=Emoji.BACK, style="primary")])
+    return InlineKeyboardMarkup(rows)
