@@ -108,6 +108,10 @@ class Settings:
     membership_cache_negative_ttl_seconds: int = 15
     membership_cache_max_entries: int = 10000
     broadcast_concurrency: int = 20
+    startup_lock_wait_seconds: int = 180
+    startup_lock_retry_seconds: int = 2
+    polling_conflict_wait_seconds: int = 180
+    polling_conflict_retry_seconds: int = 5
 
     @classmethod
     def from_env(cls, *, require_bot_token: bool = True) -> "Settings":
@@ -140,6 +144,10 @@ class Settings:
             ),
             membership_cache_max_entries=max(0, _env_int("MEMBERSHIP_CACHE_MAX_ENTRIES", 10000)),
             broadcast_concurrency=max(1, _env_int("BROADCAST_CONCURRENCY", 20)),
+            startup_lock_wait_seconds=max(1, _env_int("STARTUP_LOCK_WAIT_SECONDS", 180)),
+            startup_lock_retry_seconds=max(1, _env_int("STARTUP_LOCK_RETRY_SECONDS", 2)),
+            polling_conflict_wait_seconds=max(1, _env_int("POLLING_CONFLICT_WAIT_SECONDS", 180)),
+            polling_conflict_retry_seconds=max(1, _env_int("POLLING_CONFLICT_RETRY_SECONDS", 5)),
         )
 
     def is_admin(self, telegram_id: int | None) -> bool:

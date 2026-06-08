@@ -7,6 +7,7 @@ from datetime import timezone
 from uuid import uuid4
 
 from sqlalchemy import Select, case, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import (
@@ -53,6 +54,19 @@ class RedeemService:
     async def get_user_by_telegram_id(self, telegram_id: int) -> User | None:
         return await self.session.scalar(select(User).where(User.telegram_id == telegram_id))
 
+    async def get_user_for_update_by_telegram_id(self, telegram_id: int) -> User | None:
+        return await self.session.scalar(
+            select(User)
+            .where(User.telegram_id == telegram_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    async def get_user_for_update_by_id(self, user_id: int) -> User | None:
+        return await self.session.scalar(
+            select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True)
+        )
+
     async def get_or_create_user(
         self,
         *,
@@ -61,14 +75,22 @@ class RedeemService:
         first_name: str | None = None,
         referral_telegram_id: int | None = None,
     ) -> User:
-        user = await self.get_user_by_telegram_id(telegram_id)
-        created = False
+        created_user_id = await self.session.scalar(
+            pg_insert(User)
+            .values(telegram_id=telegram_id, username=username, first_name=first_name)
+            .on_conflict_do_nothing(index_elements=[User.telegram_id])
+            .returning(User.id)
+        )
+        created = created_user_id is not None
+        user = await (
+            self.get_user_for_update_by_id(created_user_id)
+            if created_user_id is not None
+            else self.get_user_for_update_by_telegram_id(telegram_id)
+        )
         if user is None:
-            user = User(telegram_id=telegram_id)
-            self.session.add(user)
-            created = True
+            raise ValueError("User not found")
 
-        needs_flush = created
+        needs_flush = False
         if user.username != username:
             user.username = username
             needs_flush = True
@@ -82,7 +104,11 @@ class RedeemService:
             referrer = await self.get_user_by_telegram_id(referral_telegram_id)
             if referrer is not None:
                 user.referred_by_user_id = referrer.id
-                self.session.add(Referral(referrer_user_id=referrer.id, referred_user_id=user.id))
+                await self.session.execute(
+                    pg_insert(Referral)
+                    .values(referrer_user_id=referrer.id, referred_user_id=user.id)
+                    .on_conflict_do_nothing()
+                )
                 await self.session.flush()
 
         return user
@@ -97,12 +123,9 @@ class RedeemService:
         related_type: str | None = None,
         related_id: int | None = None,
     ) -> bool:
-        existing = await self.session.scalar(select(PointLedger).where(PointLedger.idempotency_key == idempotency_key))
-        if existing is not None:
-            return False
-
-        self.session.add(
-            PointLedger(
+        inserted_ledger_id = await self.session.scalar(
+            pg_insert(PointLedger)
+            .values(
                 user_id=user_id,
                 points=points,
                 reason=reason,
@@ -110,7 +133,12 @@ class RedeemService:
                 related_id=related_id,
                 idempotency_key=idempotency_key,
             )
+            .on_conflict_do_nothing(index_elements=[PointLedger.idempotency_key])
+            .returning(PointLedger.id)
         )
+        if inserted_ledger_id is None:
+            return False
+
         result = await self.session.execute(
             update(User).where(User.id == user_id).values(point_balance=User.point_balance + points)
         )
@@ -121,18 +149,19 @@ class RedeemService:
 
     async def mark_verified_and_award(self, telegram_id: int, *, user: User | None = None) -> User:
         if user is None:
-            user = await self.session.scalar(select(User).where(User.telegram_id == telegram_id).with_for_update())
+            user = await self.get_user_for_update_by_telegram_id(telegram_id)
         else:
-            user = await self.session.scalar(select(User).where(User.id == user.id).with_for_update())
+            user = await self.get_user_for_update_by_id(user.id)
         if user is None:
             raise ValueError("User not found")
-        if user.is_verified:
-            return user
 
-        user.is_verified = True
+        if not user.is_verified:
+            user.is_verified = True
 
         referral = await self.session.scalar(
-            select(Referral).where(Referral.referred_user_id == user.id, Referral.status == "pending")
+            select(Referral)
+            .where(Referral.referred_user_id == user.id, Referral.status == "pending")
+            .with_for_update()
         )
         if referral is not None:
             await self.grant_points(
@@ -191,16 +220,21 @@ class RedeemService:
         for _ in range(20):
             if not candidate:
                 candidate = self.random_claim_code()
-            existing = await self.session.scalar(select(ClaimCode).where(ClaimCode.code == candidate))
-            if existing is None:
-                claim_code = ClaimCode(
+            claim_code_id = await self.session.scalar(
+                pg_insert(ClaimCode)
+                .values(
                     code=candidate,
                     points=points,
                     max_redemptions=max_redemptions,
                     created_by_admin_id=admin_telegram_id,
                 )
-                self.session.add(claim_code)
-                await self.session.flush()
+                .on_conflict_do_nothing(index_elements=[ClaimCode.code])
+                .returning(ClaimCode.id)
+            )
+            if claim_code_id is not None:
+                claim_code = await self.session.get(ClaimCode, claim_code_id)
+                if claim_code is None:
+                    raise ValueError("claim code was not created")
                 return claim_code
             if code:
                 raise ValueError("claim code already exists")
@@ -292,7 +326,7 @@ class RedeemService:
         return [int(row[0]) for row in rows.all()]
 
     async def create_withdrawal_request(self, telegram_id: int) -> WithdrawalRequestResult:
-        user = await self.session.scalar(select(User).where(User.telegram_id == telegram_id).with_for_update())
+        user = await self.get_user_for_update_by_telegram_id(telegram_id)
         if user is None:
             return WithdrawalRequestResult("missing_user", None, "Please use /start first so I can create your account.")
 
@@ -348,18 +382,16 @@ class RedeemService:
         if not cleaned_codes:
             return 0, skipped
 
-        existing_rows = await self.session.scalars(
-            select(RedeemCode.code).where(RedeemCode.code.in_(cleaned_codes))
+        inserted_codes = await self.session.scalars(
+            pg_insert(RedeemCode)
+            .values([{"code": code, "note": note} for code in cleaned_codes])
+            .on_conflict_do_nothing(index_elements=[RedeemCode.code])
+            .returning(RedeemCode.code)
         )
-        existing_codes = set(existing_rows.all())
-        new_codes = [code for code in cleaned_codes if code not in existing_codes]
-        skipped += len(cleaned_codes) - len(new_codes)
-        if not new_codes:
-            return 0, skipped
-
-        self.session.add_all(RedeemCode(code=code, note=note) for code in new_codes)
+        added = len(inserted_codes.all())
+        skipped += len(cleaned_codes) - added
         await self.session.flush()
-        return len(new_codes), skipped
+        return added, skipped
 
     async def stock_counts(self) -> dict[str, int]:
         rows = await self.session.execute(select(RedeemCode.status, func.count()).group_by(RedeemCode.status))
@@ -393,7 +425,7 @@ class RedeemService:
         if withdrawal.status != "pending":
             return ApprovalResult(False, withdrawal, None, f"Withdrawal is already {withdrawal.status}.")
 
-        user = await self.session.get(User, withdrawal.user_id)
+        user = await self.get_user_for_update_by_id(withdrawal.user_id)
         if user is None:
             return ApprovalResult(False, withdrawal, None, "Withdrawal user not found.")
         if user.point_balance < withdrawal.points_cost:
@@ -479,7 +511,9 @@ class RedeemService:
         telegram_payment_charge_id: str,
         provider_payment_charge_id: str | None,
     ) -> StarPayment | None:
-        payment = await self.session.scalar(select(StarPayment).where(StarPayment.invoice_payload == payload))
+        payment = await self.session.scalar(
+            select(StarPayment).where(StarPayment.invoice_payload == payload).with_for_update()
+        )
         if payment is None:
             return None
         if payment.status == "paid":

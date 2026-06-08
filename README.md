@@ -24,7 +24,7 @@ python -m pip install -e .
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with your bot token, admin Telegram IDs, PostgreSQL URL, and required channels. `BOT_USERNAME` is optional because the bot fetches its own username from Telegram on startup.
+Edit `.env` with your bot token, admin Telegram IDs, PostgreSQL URL, and required channels. The bot automatically fetches its own username and uses built-in defaults for rewards, withdrawal cost, support amount, performance tuning, and startup/shutdown safety.
 
 `DATABASE_URL` must point to PostgreSQL. These formats are accepted:
 

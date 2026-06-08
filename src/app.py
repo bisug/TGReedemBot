@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from dataclasses import replace
+from time import monotonic
 
-from telegram.error import TelegramError
-from telegram.ext import Application, ApplicationBuilder
+from telegram.error import Conflict, TelegramError
+from telegram.ext import Application, ApplicationBuilder, ContextTypes
 
 from src.config import Settings
 from src.database import Database
@@ -14,6 +16,8 @@ from src.modules.payments import register_payment_handlers
 from src.modules.user import register_user_handlers
 
 logger = logging.getLogger(__name__)
+
+POLLING_ALLOWED_UPDATES = ("message", "callback_query", "pre_checkout_query")
 
 
 def build_application(
@@ -40,16 +44,71 @@ def build_application(
     register_user_handlers(application)
     register_admin_handlers(application)
     register_payment_handlers(application)
+    application.add_error_handler(_log_update_error)
     return application
 
 
 def _startup(database: Database):
-    async def post_init(_application: Application) -> None:
-        await database.init_models()
-        await _load_bot_identity(_application)
-        await _load_required_channel_invites(_application)
+    async def post_init(application: Application) -> None:
+        settings: Settings = application.bot_data["settings"]
+        logger.info("Starting Redeem Bot lifecycle startup.")
+        try:
+            await database.acquire_lifecycle_lock(
+                _polling_lock_id(settings),
+                wait_seconds=settings.startup_lock_wait_seconds,
+                retry_seconds=settings.startup_lock_retry_seconds,
+            )
+            logger.info("Acquired bot lifecycle lock.")
+            await database.init_models()
+            await _load_bot_identity(application)
+            await _load_required_channel_invites(application)
+            await _wait_for_polling_slot(application)
+            logger.info("Redeem Bot startup completed.")
+        except Exception:
+            await database.release_lifecycle_lock()
+            raise
 
     return post_init
+
+
+def _polling_lock_id(settings: Settings) -> int:
+    digest = hashlib.blake2b(
+        settings.bot_token.encode("utf-8"),
+        digest_size=8,
+        person=b"redeembot",
+    ).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+async def _wait_for_polling_slot(application: Application) -> None:
+    settings: Settings = application.bot_data["settings"]
+    deadline = monotonic() + settings.polling_conflict_wait_seconds
+
+    while True:
+        try:
+            await application.bot.get_updates(
+                limit=1,
+                timeout=0,
+                allowed_updates=POLLING_ALLOWED_UPDATES,
+            )
+            return
+        except Conflict as exc:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Telegram polling is still locked by another getUpdates request. "
+                    "Make sure only one Render worker is running this bot."
+                ) from exc
+
+            delay = min(settings.polling_conflict_retry_seconds, remaining)
+            logger.warning(
+                "Another Telegram getUpdates request is active. Waiting %.1f seconds before retrying startup.",
+                delay,
+            )
+            await asyncio.sleep(delay)
+        except TelegramError as exc:
+            logger.warning("Could not preflight Telegram polling slot. Continuing startup. Telegram error: %s", exc)
+            return
 
 
 async def _load_bot_identity(application: Application) -> None:
@@ -120,6 +179,19 @@ async def _load_required_channel_invite(application: Application, channel) -> tu
 
 def _dispose_database(database: Database):
     async def post_shutdown(_application: Application) -> None:
+        logger.info("Shutting down Redeem Bot and releasing database resources.")
         await database.dispose()
+        logger.info("Redeem Bot shutdown completed.")
 
     return post_shutdown
+
+
+async def _log_update_error(_update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.error is None:
+        logger.error("Unhandled bot update error with no exception details.")
+        return
+
+    logger.error(
+        "Unhandled bot update error.",
+        exc_info=(type(context.error), context.error, context.error.__traceback__),
+    )

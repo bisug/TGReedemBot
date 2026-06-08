@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import ssl
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from time import monotonic
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 
 from src.database.models import Base
 
@@ -34,6 +36,8 @@ class Database:
             connect_args=connect_args,
         )
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
+        self._lifecycle_lock_connection: AsyncConnection | None = None
+        self._lifecycle_lock_id: int | None = None
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
@@ -49,7 +53,59 @@ class Database:
             result = await session.execute(text("SELECT 1"))
             return result.scalar_one() == 1
 
+    async def acquire_lifecycle_lock(
+        self,
+        lock_id: int,
+        *,
+        wait_seconds: int,
+        retry_seconds: int,
+    ) -> None:
+        if self._lifecycle_lock_connection is not None:
+            return
+
+        deadline = monotonic() + wait_seconds
+        retry_delay = max(1, retry_seconds)
+
+        while True:
+            connection = await self.engine.connect()
+            locked = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                {"lock_id": lock_id},
+            )
+            if locked:
+                self._lifecycle_lock_connection = connection
+                self._lifecycle_lock_id = lock_id
+                return
+
+            await connection.close()
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Another bot worker is still holding the startup lock. "
+                    "Stop the duplicate worker or increase STARTUP_LOCK_WAIT_SECONDS."
+                )
+            await asyncio.sleep(min(retry_delay, remaining))
+
+    async def release_lifecycle_lock(self) -> None:
+        connection = self._lifecycle_lock_connection
+        lock_id = self._lifecycle_lock_id
+        self._lifecycle_lock_connection = None
+        self._lifecycle_lock_id = None
+
+        if connection is None:
+            return
+
+        try:
+            if lock_id is not None:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_id)"),
+                    {"lock_id": lock_id},
+                )
+        finally:
+            await connection.close()
+
     async def dispose(self) -> None:
+        await self.release_lifecycle_lock()
         await self.engine.dispose()
 
 
