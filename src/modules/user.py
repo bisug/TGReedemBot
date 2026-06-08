@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from telegram import LabeledPrice, Update
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TelegramError
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from src.config import Settings
+from src.database import Database
 from src.domain import WithdrawalStatus
 from src.helpers.common import (
     answer_callback,
@@ -37,6 +38,10 @@ async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
                 raise
     elif update.effective_message:
         await update.effective_message.reply_text(text, **kwargs)
+
+
+def _plain_command_list(lines: list[str]) -> str:
+    return "\n".join(f"- {h(line)}" for line in lines)
 
 
 def _is_admin(update: Update, settings: Settings) -> bool:
@@ -86,17 +91,20 @@ def _commands_intro_text(*, is_admin: bool) -> str:
 
 
 def _user_commands_text() -> str:
+    commands = _plain_command_list(
+        [
+            "/start - Open the dashboard",
+            "/help - Open help",
+            "/claim <code> - Redeem a points claim code",
+            "/withdraw - Check withdrawal status and request a code",
+            "/paysupport - Get help with Telegram Stars payments",
+        ]
+    )
     return "\n".join(
         [
             f"{ce('📄', Emoji.DOCUMENT)} <b>User Commands</b>",
             "",
-            code_block(
-                "/start - Open the dashboard\n"
-                "/help - Open help\n"
-                "/claim <code> - Redeem a points claim code\n"
-                "/withdraw - Check withdrawal status and request a code\n"
-                "/paysupport - Get help with Telegram Stars payments"
-            ),
+            commands,
             "",
             "<b>Dashboard buttons:</b>",
             f"{ce('💳', Emoji.CREDIT_CARD)} Withdraw - Request a Google redeem code",
@@ -109,25 +117,29 @@ def _user_commands_text() -> str:
 
 
 def _admin_commands_text() -> str:
+    commands = _plain_command_list(
+        [
+            "/admin - Show the admin menu",
+            "/stats - Show users, points, stock, withdrawals, and Stars totals",
+            "/broadcast <message> - Send a message to all registered users",
+            "Reply /broadcast - Broadcast the replied message",
+            "?broadcast <message> - Alternate broadcast prefix",
+            "/genpoints <points> [max_uses] [custom_code] - Create a claim code for points",
+            "/addcodes - Add Google redeem code inventory, one code per line",
+            "/codes [all|unused|reserved|used] - List redeem codes",
+            "/updatecode <old_code> <new_code> - Replace an unused redeem code",
+            "/removecode <code> - Remove an unused redeem code",
+            "/stock - Show redeem code stock counts",
+            "/withdrawals - List open withdrawal records",
+            "/approve <withdrawal_id> - Retry or manually approve a withdrawal",
+            "/reject <withdrawal_id> [reason] - Reject without deducting points",
+        ]
+    )
     return "\n".join(
         [
             f"{ce('⚙️', Emoji.GEAR)} <b>Admin Commands</b>",
             "",
-            code_block(
-                "/admin - Show the admin menu\n"
-                "/stats - Show users, points, stock, withdrawals, and Stars totals\n"
-                "/broadcast <message> - Send a message to all registered users\n"
-                "Reply /broadcast - Broadcast the replied message\n"
-                "?broadcast <message> - Alternate broadcast prefix\n"
-                "/genpoints <points> [max_uses] [custom_code] - Create a claim code for points\n"
-                "/addcodes - Add Google redeem code inventory, one code per line\n"
-                "/updatecode <old_code> <new_code> - Replace an unused redeem code\n"
-                "/removecode <code> - Remove an unused redeem code\n"
-                "/stock - Show redeem code stock counts\n"
-                "/withdrawals - List pending withdrawal requests\n"
-                "/approve <withdrawal_id> - Approve a request and send a code\n"
-                "/reject <withdrawal_id> [reason] - Reject a request without deducting points"
-            ),
+            commands,
         ]
     )
 
@@ -407,7 +419,7 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 def _withdrawal_status_hint(status: str) -> str:
     if status == WithdrawalStatus.PENDING:
-        return "Your request is waiting for admin review."
+        return "Your request is waiting for delivery."
     if status == WithdrawalStatus.RESERVED:
         return "Your redeem code is being prepared for delivery."
     if status == WithdrawalStatus.DELIVERY_FAILED:
@@ -417,6 +429,54 @@ def _withdrawal_status_hint(status: str) -> str:
     if status == WithdrawalStatus.REJECTED:
         return "Your last withdrawal was rejected. Your points were not deducted."
     return "Check back here for the latest withdrawal status."
+
+
+async def _reserve_automatic_withdrawal(*, db: Database, settings: Settings, telegram_id: int):
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            return await service.reserve_automatic_withdrawal(telegram_id)
+
+
+async def _send_withdrawal_code(context: ContextTypes.DEFAULT_TYPE, *, telegram_id: int, code: str) -> None:
+    await context.bot.send_message(
+        chat_id=telegram_id,
+        text=(
+            f"{ce('✅', Emoji.SUCCESS)} <b>Your withdrawal was approved.</b>\n\n"
+            f"<b>Google redeem code:</b>\n{code_block(code)}\n"
+            f"{quote_block('Keep this code private and redeem it from your Google account.')}"
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _finalize_automatic_withdrawal(
+    *,
+    db: Database,
+    settings: Settings,
+    withdrawal_id: int,
+):
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            return await service.finalize_reserved_withdrawal(withdrawal_id, admin_telegram_id=None)
+
+
+async def _mark_automatic_withdrawal_delivery_failed(
+    *,
+    db: Database,
+    settings: Settings,
+    withdrawal_id: int,
+    error: TelegramError,
+):
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            return await service.mark_withdrawal_delivery_failed(
+                withdrawal_id,
+                admin_telegram_id=None,
+                reason=str(error),
+            )
 
 
 async def _show_withdrawal_screen(
@@ -432,6 +492,27 @@ async def _show_withdrawal_screen(
         return
 
     result_message: str | None = None
+    if create_request:
+        result = await _reserve_automatic_withdrawal(db=db, settings=settings, telegram_id=telegram_user.id)
+        result_message = result.message
+        if result.success and result.withdrawal is not None and result.code:
+            try:
+                await _send_withdrawal_code(context, telegram_id=telegram_user.id, code=result.code)
+            except TelegramError as exc:
+                result = await _mark_automatic_withdrawal_delivery_failed(
+                    db=db,
+                    settings=settings,
+                    withdrawal_id=result.withdrawal.id,
+                    error=exc,
+                )
+            else:
+                result = await _finalize_automatic_withdrawal(
+                    db=db,
+                    settings=settings,
+                    withdrawal_id=result.withdrawal.id,
+                )
+            result_message = result.message
+
     async with db.session() as session:
         async with session.begin():
             service = RedeemService(session, settings)
@@ -439,12 +520,7 @@ async def _show_withdrawal_screen(
             if user is None:
                 await _show_verification(update, context)
                 return
-            if create_request:
-                result = await service.create_withdrawal_request(telegram_user.id)
-                result_message = result.message
-                latest = result.withdrawal or await service.latest_withdrawal_for_user(user.id)
-            else:
-                latest = await service.latest_withdrawal_for_user(user.id)
+            latest = await service.latest_withdrawal_for_user(user.id)
             points = user.point_balance
 
     has_open_request = latest is not None and latest.status in WithdrawalStatus.OPEN
@@ -463,7 +539,7 @@ async def _show_withdrawal_screen(
     elif has_open_request:
         guidance = status_hint
     elif can_request:
-        guidance = "You have enough points. Press Request Code to send your request to admins."
+        guidance = "You have enough points. Press Request Code to receive a redeem code automatically."
     else:
         guidance = f"You need {points_needed} more point(s). Use referrals or claim codes, then return here."
 

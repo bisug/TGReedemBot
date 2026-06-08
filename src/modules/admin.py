@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from src.config import Settings
 from src.database import Database
 from src.database.models import User
-from src.domain import WithdrawalStatus
+from src.domain import RedeemCodeStatus, WithdrawalStatus
 from src.helpers.common import get_database, get_settings
 from src.helpers.security import enforce_rate_limit, require_private_chat
 from src.services import ApprovalResult, RedeemService
@@ -64,6 +64,41 @@ def _command_body(update: Update) -> str:
     text = update.effective_message.text if update.effective_message else ""
     parts = text.split(maxsplit=1)
     return parts[1] if len(parts) > 1 else ""
+
+
+def _plain_command_list(lines: list[str]) -> str:
+    return "\n".join(f"- {h(line)}" for line in lines)
+
+
+def _chunk_lines(lines: list[str], *, max_chars: int = 3400) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    current_chars = 0
+
+    for line in lines:
+        next_chars = len(line) + 1
+        if current and current_chars + next_chars > max_chars:
+            chunks.append("\n".join(current))
+            current = []
+            current_chars = 0
+        current.append(line)
+        current_chars += next_chars
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
+def _code_status_filter(raw_status: str) -> tuple[str | None, str] | None:
+    aliases = {
+        "all": (None, "all"),
+        "available": (RedeemCodeStatus.AVAILABLE, "unused"),
+        "unused": (RedeemCodeStatus.AVAILABLE, "unused"),
+        "reserved": (RedeemCodeStatus.RESERVED, "reserved"),
+        "sent": (RedeemCodeStatus.SENT, "used"),
+        "used": (RedeemCodeStatus.SENT, "used"),
+    }
+    return aliases.get(raw_status.lower())
 
 
 def _utf16_length(value: str) -> int:
@@ -186,19 +221,22 @@ async def _broadcast_many(bot: Bot, user_ids: list[int], payload: BroadcastPaylo
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update, context):
         return
-    commands = code_block(
-        "/stats - Show users, points, stock, withdrawals, and Stars totals\n"
-        "/broadcast <message> - Send a message to all registered users\n"
-        "Reply /broadcast - Broadcast the replied message\n"
-        "?broadcast <message> - Alternate broadcast prefix\n"
-        "/genpoints <points> [max_uses] [custom_code] - Create a points claim code\n"
-        "/addcodes - Add Google redeem code inventory, one code per line\n"
-        "/updatecode <old_code> <new_code> - Replace an unused redeem code\n"
-        "/removecode <code> - Remove an unused redeem code\n"
-        "/stock - Show redeem code inventory counts\n"
-        "/withdrawals - List pending withdrawal requests\n"
-        "/approve <withdrawal_id> - Approve a request and send a code\n"
-        "/reject <withdrawal_id> [reason] - Reject a request without deducting points"
+    commands = _plain_command_list(
+        [
+            "/stats - Show users, points, stock, withdrawals, and Stars totals",
+            "/broadcast <message> - Send a message to all registered users",
+            "Reply /broadcast - Broadcast the replied message",
+            "?broadcast <message> - Alternate broadcast prefix",
+            "/genpoints <points> [max_uses] [custom_code] - Create a points claim code",
+            "/addcodes - Add Google redeem code inventory, one code per line",
+            "/codes [all|unused|reserved|used] - List redeem codes",
+            "/updatecode <old_code> <new_code> - Replace an unused redeem code",
+            "/removecode <code> - Remove an unused redeem code",
+            "/stock - Show redeem code inventory counts",
+            "/withdrawals - List open withdrawal records",
+            "/approve <withdrawal_id> - Retry or manually approve a withdrawal",
+            "/reject <withdrawal_id> [reason] - Reject without deducting points",
+        ]
     )
     await update.effective_message.reply_text(
         f"{ce('⚙️', Emoji.GEAR)} <b>Admin Panel</b>\n\n"
@@ -241,6 +279,50 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"{quote_block(summary)}",
         parse_mode=ParseMode.HTML,
     )
+
+
+async def codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update, context):
+        return
+    raw_status = context.args[0].lower() if context.args else "all"
+    status_filter = _code_status_filter(raw_status)
+    if status_filter is None:
+        await update.effective_message.reply_text(
+            f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes</b>\n\n"
+            "Please choose one of: all, unused, reserved, used.\n\n"
+            f"<b>Example:</b>\n{code_block('/codes unused')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    status, label = status_filter
+    settings = get_settings(context)
+    db = get_database(context)
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            rows = await service.list_redeem_codes(status=status)
+
+    if not rows:
+        await update.effective_message.reply_text(
+            f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes</b>\n\n"
+            f"{quote_block(f'No {label} redeem codes found.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    summary = f"Showing {len(rows)} code(s)."
+    lines = [f"#{code.id} [{code.status}] {code.code}" for code in rows]
+    chunks = _chunk_lines(lines)
+
+    for index, chunk in enumerate(chunks, start=1):
+        page_note = summary if len(chunks) == 1 else f"{summary} Page {index}/{len(chunks)}."
+        await update.effective_message.reply_text(
+            f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes - {h(label.title())}</b>\n"
+            f"{quote_block(page_note)}\n\n"
+            f"{quote_block(chunk)}",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 async def update_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -311,8 +393,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Users: {values['total_users']}\n"
         f"Verified users: {values['verified_users']}\n"
         f"Pending withdrawals: {values['pending_withdrawals']}\n"
-        f"Available redeem codes: {values['available_codes']}\n"
-        f"Sent redeem codes: {values['sent_codes']}\n"
+        f"Unused redeem codes: {values['available_codes']}\n"
+        f"Used redeem codes: {values['sent_codes']}\n"
         f"Total active points: {values['total_points']}\n"
         f"Paid Stars: {values['paid_stars']}\n"
         f"Active claim codes: {values['active_claim_codes']}"
@@ -454,9 +536,9 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             counts = await service.stock_counts()
 
     stock_text = (
-        f"Available: {counts.get('available', 0)}\n"
+        f"Unused: {counts.get('available', 0)}\n"
         f"Reserved: {counts.get('reserved', 0)}\n"
-        f"Sent: {counts.get('sent', 0)}"
+        f"Used: {counts.get('sent', 0)}"
     )
     await update.effective_message.reply_text(
         f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Code Stock</b>\n\n"
@@ -477,8 +559,8 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if not rows:
         await update.effective_message.reply_text(
-            f"{ce('⏰', Emoji.ALARM)} <b>Pending Withdrawals</b>\n\n"
-            f"{quote_block('There are no pending withdrawal requests.')}",
+            f"{ce('⏰', Emoji.ALARM)} <b>Open Withdrawals</b>\n\n"
+            f"{quote_block('There are no open withdrawal records.')}",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -490,7 +572,7 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         lines.append(f"#{withdrawal.id} - {h(label)} - {withdrawal.points_cost} points{status}")
     withdrawal_text = "\n".join(lines)
     await update.effective_message.reply_text(
-        f"{ce('⏰', Emoji.ALARM)} <b>Pending Withdrawals</b>\n\n{quote_block(withdrawal_text)}",
+        f"{ce('⏰', Emoji.ALARM)} <b>Open Withdrawals</b>\n\n{quote_block(withdrawal_text)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -661,6 +743,7 @@ def register_admin_handlers(application: Application) -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^\?broadcast(?:\s|$)"), broadcast))
     application.add_handler(CommandHandler("genpoints", genpoints))
     application.add_handler(CommandHandler("addcodes", add_codes))
+    application.add_handler(CommandHandler("codes", codes))
     application.add_handler(CommandHandler("updatecode", update_code))
     application.add_handler(CommandHandler("removecode", remove_code))
     application.add_handler(CommandHandler("stock", stock))

@@ -360,7 +360,7 @@ class RedeemService:
         if existing is not None:
             return WithdrawalRequestResult(
                 existing,
-                "You already have a withdrawal request waiting for admin review or delivery.",
+                "You already have a withdrawal request waiting for delivery.",
             )
 
         if user.point_balance < self.settings.withdraw_cost_points:
@@ -378,7 +378,7 @@ class RedeemService:
         await self.session.flush()
         return WithdrawalRequestResult(
             withdrawal,
-            "Your withdrawal request was created. An admin will review it and send a code if approved.",
+            "Your withdrawal request was created and is waiting for code delivery.",
         )
 
     async def latest_withdrawal_for_user(self, user_id: int) -> Withdrawal | None:
@@ -467,6 +467,15 @@ class RedeemService:
             counts[str(status)] = int(count)
         return counts
 
+    async def list_redeem_codes(self, *, status: str | None = None) -> list[RedeemCode]:
+        status_filter = None if status in (None, "all") else status
+        statement = select(RedeemCode).order_by(RedeemCode.id.asc())
+        if status_filter is not None:
+            statement = statement.where(RedeemCode.status == status_filter)
+
+        rows = await self.session.scalars(statement)
+        return list(rows.all())
+
     async def pending_withdrawals(self, *, limit: int = 20) -> list[tuple[Withdrawal, User]]:
         statement: Select[tuple[Withdrawal, User]] = (
             select(Withdrawal, User)
@@ -504,7 +513,7 @@ class RedeemService:
 
     @staticmethod
     def _reserve_code_for_withdrawal(
-        *, withdrawal: Withdrawal, code: RedeemCode, admin_telegram_id: int
+        *, withdrawal: Withdrawal, code: RedeemCode, admin_telegram_id: int | None
     ) -> None:
         now = utcnow()
         code.status = RedeemCodeStatus.RESERVED
@@ -519,6 +528,53 @@ class RedeemService:
         code.status = RedeemCodeStatus.AVAILABLE
         code.assigned_withdrawal_id = None
         code.assigned_at = None
+
+    async def reserve_automatic_withdrawal(self, telegram_id: int) -> ApprovalResult:
+        user = await self.get_user_for_update_by_telegram_id(telegram_id)
+        if user is None:
+            return ApprovalResult(False, None, None, "Please use /start first so I can create your account.")
+
+        existing = await self.session.scalar(
+            select(Withdrawal)
+            .where(Withdrawal.user_id == user.id, Withdrawal.status.in_(WithdrawalStatus.OPEN))
+            .order_by(Withdrawal.id.desc())
+            .limit(1)
+        )
+        if existing is not None:
+            return ApprovalResult(
+                False,
+                existing,
+                None,
+                "You already have a withdrawal request waiting for delivery.",
+            )
+
+        if user.point_balance < self.settings.withdraw_cost_points:
+            return ApprovalResult(
+                False,
+                None,
+                None,
+                f"You need at least {self.settings.withdraw_cost_points} points before you can request a code.",
+            )
+
+        code = await self._next_available_redeem_code()
+        if code is None:
+            return ApprovalResult(
+                False,
+                None,
+                None,
+                "No redeem codes are available right now. Please try again later.",
+            )
+
+        withdrawal = Withdrawal(
+            user_id=user.id,
+            points_cost=self.settings.withdraw_cost_points,
+            status=WithdrawalStatus.PENDING,
+        )
+        self.session.add(withdrawal)
+        await self.session.flush()
+        self._reserve_code_for_withdrawal(withdrawal=withdrawal, code=code, admin_telegram_id=None)
+        await self.session.flush()
+        return ApprovalResult(True, withdrawal, code.code, "Withdrawal approved automatically. Sending your code now.")
 
     async def reserve_withdrawal_approval(self, withdrawal_id: int, *, admin_telegram_id: int) -> ApprovalResult:
         withdrawal = await self._get_withdrawal_for_update(withdrawal_id)
@@ -566,7 +622,9 @@ class RedeemService:
         await self.session.flush()
         return ApprovalResult(True, withdrawal, code.code, "Withdrawal reserved. Sending code to the user.")
 
-    async def finalize_reserved_withdrawal(self, withdrawal_id: int, *, admin_telegram_id: int) -> ApprovalResult:
+    async def finalize_reserved_withdrawal(
+        self, withdrawal_id: int, *, admin_telegram_id: int | None
+    ) -> ApprovalResult:
         withdrawal = await self._get_withdrawal_for_update(withdrawal_id)
         if withdrawal is None:
             return ApprovalResult(False, None, None, "Withdrawal not found.")
@@ -614,7 +672,7 @@ class RedeemService:
         return ApprovalResult(True, withdrawal, code.code, "Withdrawal approved and code sent to the user.")
 
     async def mark_withdrawal_delivery_failed(
-        self, withdrawal_id: int, *, admin_telegram_id: int, reason: str | None = None
+        self, withdrawal_id: int, *, admin_telegram_id: int | None, reason: str | None = None
     ) -> ApprovalResult:
         withdrawal = await self._get_withdrawal_for_update(withdrawal_id)
         if withdrawal is None:
