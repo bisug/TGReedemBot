@@ -129,7 +129,7 @@ Use a Render PostgreSQL database or any external PostgreSQL provider, then set `
 - `/genpoints <points> [max_uses] [custom_code]` - create a points claim code.
 - `/admin` - show admin menu.
 - `/addcodes` - add codes, one per line after the command.
-- `/codes [all|unused|reserved|used]` - list redeem codes.
+- `/codes [all|unused|pending|used]` - list redeem codes.
 - `/updatecode <old_code> <new_code>` - replace an unused redeem code.
 - `/removecode <code_or_id>` - remove an unused redeem code.
 - `/stock` - show inventory counts.

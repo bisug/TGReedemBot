@@ -97,7 +97,8 @@ def _code_status_filter(raw_status: str) -> tuple[str | None, str, str] | None:
         "all": (None, "all", "all"),
         "available": (RedeemCodeStatus.AVAILABLE, "unused", "unused"),
         "unused": (RedeemCodeStatus.AVAILABLE, "unused", "unused"),
-        "reserved": (RedeemCodeStatus.RESERVED, "reserved", "reserved"),
+        "pending": (RedeemCodeStatus.RESERVED, "pending", "pending"),
+        "reserved": (RedeemCodeStatus.RESERVED, "pending", "pending"),
         "sent": (RedeemCodeStatus.SENT, "used", "used"),
         "used": (RedeemCodeStatus.SENT, "used", "used"),
     }
@@ -105,21 +106,15 @@ def _code_status_filter(raw_status: str) -> tuple[str | None, str, str] | None:
 
 
 def _code_status_icon(status: str) -> str:
-    return "🟢" if status == RedeemCodeStatus.AVAILABLE else "🔴"
-
-
-def _code_status_label(status: str) -> str:
     if status == RedeemCodeStatus.AVAILABLE:
-        return "unused"
+        return "🟢"
     if status == RedeemCodeStatus.RESERVED:
-        return "reserved"
-    if status == RedeemCodeStatus.SENT:
-        return "used"
-    return status
+        return "🟡"
+    return "🔴"
 
 
 def _code_list_line(code: RedeemCode) -> str:
-    return f"#{code.id} {_code_status_icon(code.status)} {h(_code_status_label(code.status))} <code>{h(code.code)}</code>"
+    return f"#{code.id} {_code_status_icon(code.status)} <code>{h(code.code)}</code>"
 
 
 def _code_list_keyboard(*, status_key: str, page: int, total_pages: int) -> InlineKeyboardMarkup | None:
@@ -262,7 +257,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             "?broadcast <message> - Alternate broadcast prefix",
             "/genpoints <points> [max_uses] [custom_code] - Create a points claim code",
             "/addcodes - Add Google redeem code inventory, one code per line",
-            "/codes [all|unused|reserved|used] - List redeem codes",
+            "/codes [all|unused|pending|used] - List redeem codes",
             "/updatecode <old_code> <new_code> - Replace an unused redeem code",
             "/removecode <code_or_id> - Remove an unused redeem code",
             "/stock - Show redeem code inventory counts",
@@ -326,7 +321,7 @@ async def _show_codes_page(
     if status_filter is None:
         text = (
             f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes</b>\n\n"
-            "Please choose one of: all, unused, reserved, used.\n\n"
+            "Please choose one of: all, unused, pending, used.\n\n"
             f"<b>Example:</b>\n{code_block('/codes unused')}"
         )
         if edit and update.callback_query:
@@ -817,7 +812,7 @@ def register_admin_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("genpoints", genpoints))
     application.add_handler(CommandHandler("addcodes", add_codes))
     application.add_handler(CommandHandler("codes", codes))
-    application.add_handler(CallbackQueryHandler(codes_page, pattern=r"^admin:codes:(?:all|unused|reserved|used):\d+$"))
+    application.add_handler(CallbackQueryHandler(codes_page, pattern=r"^admin:codes:(?:all|unused|pending|used):\d+$"))
     application.add_handler(CommandHandler("updatecode", update_code))
     application.add_handler(CommandHandler("removecode", remove_code))
     application.add_handler(CommandHandler("stock", stock))

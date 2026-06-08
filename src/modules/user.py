@@ -126,7 +126,7 @@ def _admin_commands_text() -> str:
             "?broadcast <message> - Alternate broadcast prefix",
             "/genpoints <points> [max_uses] [custom_code] - Create a claim code for points",
             "/addcodes - Add Google redeem code inventory, one code per line",
-            "/codes [all|unused|reserved|used] - List redeem codes",
+            "/codes [all|unused|pending|used] - List redeem codes",
             "/updatecode <old_code> <new_code> - Replace an unused redeem code",
             "/removecode <code_or_id> - Remove an unused redeem code",
             "/stock - Show redeem code stock counts",
