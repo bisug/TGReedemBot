@@ -103,6 +103,7 @@ class Settings:
     telegram_concurrent_updates: int = 64
     telegram_connection_pool_size: int = 64
     telegram_pool_timeout_seconds: int = 10
+    telegram_drop_pending_updates: bool = True
     database_pool_size: int = 10
     database_max_overflow: int = 20
     database_pool_timeout_seconds: int = 30
@@ -137,6 +138,7 @@ class Settings:
             telegram_concurrent_updates=max(1, _env_int("TELEGRAM_CONCURRENT_UPDATES", 64)),
             telegram_connection_pool_size=max(1, _env_int("TELEGRAM_CONNECTION_POOL_SIZE", 64)),
             telegram_pool_timeout_seconds=max(1, _env_int("TELEGRAM_POOL_TIMEOUT_SECONDS", 10)),
+            telegram_drop_pending_updates=_env_bool("TELEGRAM_DROP_PENDING_UPDATES", True),
             database_pool_size=max(1, _env_int("DATABASE_POOL_SIZE", 10)),
             database_max_overflow=max(0, _env_int("DATABASE_MAX_OVERFLOW", 20)),
             database_pool_timeout_seconds=max(1, _env_int("DATABASE_POOL_TIMEOUT_SECONDS", 30)),

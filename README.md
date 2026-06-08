@@ -62,6 +62,8 @@ redeem-bot
 
 The bot initializes the PostgreSQL schema on startup and then starts Telegram polling.
 
+Pending Telegram updates are dropped on startup by default, so commands sent while the bot was offline are not processed later. Set `TELEGRAM_DROP_PENDING_UPDATES=false` only if you intentionally want backlog processing.
+
 Bot tables are prefixed with `bot_` to avoid collisions with existing database tables such as `users`.
 
 ## Project Structure

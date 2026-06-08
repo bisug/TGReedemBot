@@ -25,6 +25,7 @@ def main() -> None:
     application = build_application(settings, database, manage_database_lifecycle=True)
     application.run_polling(
         allowed_updates=POLLING_ALLOWED_UPDATES,
+        drop_pending_updates=settings.telegram_drop_pending_updates,
         stop_signals=STOP_SIGNALS,
     )
 

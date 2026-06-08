@@ -195,7 +195,7 @@ async def missing_join_link(update: Update, _context: ContextTypes.DEFAULT_TYPE)
         )
 
 
-async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE, *, intro: str | None = None) -> None:
     db = get_database(context)
     settings = get_settings(context)
     telegram_user = update.effective_user
@@ -210,15 +210,16 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 first_name=telegram_user.first_name,
             )
             points = user.point_balance
+    dashboard_text = (
+        f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
+        f"<b>Available points:</b> {points}\n"
+        f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
+        f"{quote_block('Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.')}\n\n"
+        "Use Help for a quick guide or Commands for exact command formats."
+    )
     await _send_or_edit(
         update,
-        (
-            f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
-            f"<b>Available points:</b> {points}\n"
-            f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
-            f"{quote_block('Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.')}\n\n"
-            "Use Help for a quick guide or Commands for exact command formats."
-        ),
+        f"{intro}\n\n{dashboard_text}" if intro else dashboard_text,
         reply_markup=dashboard_keyboard(is_admin=_is_admin(update, settings)),
         parse_mode=ParseMode.HTML,
     )
@@ -254,13 +255,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not channel_ok:
         await _show_verification(update, context)
         return
-    if update.effective_message:
-        await update.effective_message.reply_text(
+    await _show_dashboard(
+        update,
+        context,
+        intro=(
             f"{ce('🔲', Emoji.MENU)} <b>Welcome to Redeem Code Bot</b>\n\n"
-            f"{quote_block('Use the dashboard below to check points, invite friends, request withdrawals, view help, or open commands.')}",
-            parse_mode=ParseMode.HTML,
-        )
-    await _show_dashboard(update, context)
+            f"{quote_block('Use the dashboard below to check points, invite friends, request withdrawals, view help, or open commands.')}"
+        ),
+    )
 
 
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
