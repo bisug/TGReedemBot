@@ -193,6 +193,8 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         "?broadcast <message> - Alternate broadcast prefix\n"
         "/genpoints <points> [max_uses] [custom_code] - Create a points claim code\n"
         "/addcodes - Add Google redeem code inventory, one code per line\n"
+        "/updatecode <old_code> <new_code> - Replace an unused redeem code\n"
+        "/removecode <code> - Remove an unused redeem code\n"
         "/stock - Show redeem code inventory counts\n"
         "/withdrawals - List pending withdrawal requests\n"
         "/approve <withdrawal_id> - Approve a request and send a code\n"
@@ -237,6 +239,60 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
         f"{ce('✅', Emoji.SUCCESS)} <b>Inventory updated.</b>\n\n"
         f"{quote_block(summary)}",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def update_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update, context):
+        return
+    if len(context.args) != 2:
+        await update.effective_message.reply_text(
+            f"{ce('📝', Emoji.MEMO)} <b>Update Redeem Code</b>\n\n"
+            "Please provide the current unused code and the replacement code.\n\n"
+            f"<b>Example:</b>\n{code_block('/updatecode OLD-CODE NEW-CODE')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    settings = get_settings(context)
+    db = get_database(context)
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            success, message = await service.update_available_code(context.args[0], context.args[1])
+
+    icon = ce('✅', Emoji.SUCCESS) if success else ce('❌', Emoji.CROSS)
+    title = "Redeem code updated." if success else "Could not update redeem code."
+    await update.effective_message.reply_text(
+        f"{icon} <b>{title}</b>\n\n{quote_block(message)}",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def remove_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update, context):
+        return
+    if len(context.args) != 1:
+        await update.effective_message.reply_text(
+            f"{ce('🗑', Emoji.WASTEBASKET)} <b>Remove Redeem Code</b>\n\n"
+            "Please provide one unused redeem code to remove.\n\n"
+            f"<b>Example:</b>\n{code_block('/removecode OLD-CODE')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    settings = get_settings(context)
+    db = get_database(context)
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            success, message = await service.remove_available_code(context.args[0])
+
+    icon = ce('✅', Emoji.SUCCESS) if success else ce('❌', Emoji.CROSS)
+    title = "Redeem code removed." if success else "Could not remove redeem code."
+    await update.effective_message.reply_text(
+        f"{icon} <b>{title}</b>\n\n{quote_block(message)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -605,6 +661,8 @@ def register_admin_handlers(application: Application) -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^\?broadcast(?:\s|$)"), broadcast))
     application.add_handler(CommandHandler("genpoints", genpoints))
     application.add_handler(CommandHandler("addcodes", add_codes))
+    application.add_handler(CommandHandler("updatecode", update_code))
+    application.add_handler(CommandHandler("removecode", remove_code))
     application.add_handler(CommandHandler("stock", stock))
     application.add_handler(CommandHandler("withdrawals", withdrawals))
     application.add_handler(CommandHandler("approve", approve))

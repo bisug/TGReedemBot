@@ -415,6 +415,51 @@ class RedeemService:
         await self.session.flush()
         return added, skipped
 
+    async def update_available_code(self, old_code: str, new_code: str) -> tuple[bool, str]:
+        old_code = old_code.strip()
+        new_code = new_code.strip()
+        if not old_code or not new_code:
+            return False, "Both the current code and replacement code are required."
+        if len(old_code) > MAX_REDEEM_CODE_LENGTH or len(new_code) > MAX_REDEEM_CODE_LENGTH:
+            return False, f"Redeem codes must be at most {MAX_REDEEM_CODE_LENGTH} characters."
+
+        code = await self.session.scalar(
+            select(RedeemCode).where(RedeemCode.code == old_code).with_for_update()
+        )
+        if code is None:
+            return False, "That redeem code was not found."
+        if code.status != RedeemCodeStatus.AVAILABLE:
+            return False, f"That redeem code is already {code.status} and cannot be updated."
+        if old_code == new_code:
+            return True, "No change needed. The replacement code is the same as the current code."
+
+        existing_id = await self.session.scalar(select(RedeemCode.id).where(RedeemCode.code == new_code))
+        if existing_id is not None:
+            return False, "The replacement code already exists in inventory."
+
+        code.code = new_code
+        await self.session.flush()
+        return True, "Unused redeem code updated."
+
+    async def remove_available_code(self, code_value: str) -> tuple[bool, str]:
+        code_value = code_value.strip()
+        if not code_value:
+            return False, "A redeem code is required."
+        if len(code_value) > MAX_REDEEM_CODE_LENGTH:
+            return False, f"Redeem codes must be at most {MAX_REDEEM_CODE_LENGTH} characters."
+
+        code = await self.session.scalar(
+            select(RedeemCode).where(RedeemCode.code == code_value).with_for_update()
+        )
+        if code is None:
+            return False, "That redeem code was not found."
+        if code.status != RedeemCodeStatus.AVAILABLE:
+            return False, f"That redeem code is already {code.status} and cannot be removed."
+
+        await self.session.delete(code)
+        await self.session.flush()
+        return True, "Unused redeem code removed."
+
     async def stock_counts(self) -> dict[str, int]:
         rows = await self.session.execute(select(RedeemCode.status, func.count()).group_by(RedeemCode.status))
         counts = {status: 0 for status in RedeemCodeStatus.ALL}

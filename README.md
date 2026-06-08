@@ -129,10 +129,22 @@ Use a Render PostgreSQL database or any external PostgreSQL provider, then set `
 - `/genpoints <points> [max_uses] [custom_code]` - create a points claim code.
 - `/admin` - show admin menu.
 - `/addcodes` - add codes, one per line after the command.
+- `/updatecode <old_code> <new_code>` - replace an unused redeem code.
+- `/removecode <code>` - remove an unused redeem code.
 - `/stock` - show inventory counts.
 - `/withdrawals` - list pending withdrawal requests.
 - `/approve <withdrawal_id>` - approve and send the next available code.
 - `/reject <withdrawal_id> [reason]` - reject without deducting points.
+
+Example code upload:
+
+```text
+/addcodes FCGXJ43S9VYK1PZJ
+9S4TKZNCH209SPXC
+L3TSW7X2T6F8VLTA
+6DR1PCYTX0ZU5LN5
+DVWBZVLXXJLM7TCF
+```
 
 ## User Commands
 
