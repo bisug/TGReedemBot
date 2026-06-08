@@ -122,7 +122,7 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
 
     connect_args: dict[str, object] = {}
     if sslmode == "require":
-        connect_args["ssl"] = ssl.create_default_context()
+        connect_args["ssl"] = _ssl_context_without_verification()
     elif sslmode == "verify-ca":
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
@@ -135,6 +135,13 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
 
     cleaned_url = url.set(query=query)
     return cleaned_url.render_as_string(hide_password=False), connect_args
+
+
+def _ssl_context_without_verification() -> ssl.SSLContext:
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return ssl_context
 
 
 def create_missing_indexes(connection: Connection) -> None:

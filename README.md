@@ -42,6 +42,8 @@ DATABASE_URL=postgres://avnadmin:password@your-aiven-host.aivencloud.com:28969/d
 
 If your password contains special characters such as `@`, `:`, `/`, `#`, or `?`, URL-encode the password before putting it in `DATABASE_URL`.
 
+`sslmode=require` is supported for managed PostgreSQL providers that encrypt traffic but use a self-signed or private certificate chain. Use `sslmode=verify-ca` or `sslmode=verify-full` when your provider gives you a trusted CA bundle and you want certificate validation.
+
 The bot must be able to call `getChatMember` for every channel in `REQUIRED_CHANNEL_IDS`. For private channels, add the bot as an admin and use the numeric channel ID.
 
 Force-join channels:
