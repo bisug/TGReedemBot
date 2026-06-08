@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
-from telegram import Update
+from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TelegramError
-from telegram.ext import CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
+from src.config import Settings
+from src.database import Database
 from src.database.models import User
+from src.domain import WithdrawalStatus
 from src.helpers.common import get_database, get_settings
 from src.helpers.security import enforce_rate_limit, require_private_chat
-from src.services import RedeemService
+from src.services import ApprovalResult, RedeemService
 from src.utils.limits import (
     MAX_BROADCAST_LENGTH,
     MAX_CLAIM_CODE_REDEMPTIONS,
@@ -21,6 +25,13 @@ from src.utils.limits import (
     is_valid_claim_code,
 )
 from src.utils.ui import Emoji, ce, code_block, h, quote_block
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalDeliveryPlan:
+    result: ApprovalResult
+    user_telegram_id: int | None
+    should_deliver: bool
 
 
 async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -47,7 +58,7 @@ def _command_body(update: Update) -> str:
     return parts[1] if len(parts) > 1 else ""
 
 
-async def _send_broadcast_message(bot, telegram_id: int, text: str) -> bool:  # type: ignore[no-untyped-def]
+async def _send_broadcast_message(bot: Bot, telegram_id: int, text: str) -> bool:
     for attempt in range(2):
         try:
             await bot.send_message(chat_id=telegram_id, text=text)
@@ -63,7 +74,7 @@ async def _send_broadcast_message(bot, telegram_id: int, text: str) -> bool:  # 
     return False
 
 
-async def _broadcast_many(bot, user_ids: list[int], text: str, *, concurrency: int) -> tuple[int, int]:  # type: ignore[no-untyped-def]
+async def _broadcast_many(bot: Bot, user_ids: list[int], text: str, *, concurrency: int) -> tuple[int, int]:
     if not user_ids:
         return 0, 0
 
@@ -328,12 +339,82 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     lines = []
     for withdrawal, user in rows:
         label = f"@{user.username}" if user.username else str(user.telegram_id)
-        lines.append(f"#{withdrawal.id} - {h(label)} - {withdrawal.points_cost} points")
+        status = f" - {h(withdrawal.status)}" if withdrawal.status != WithdrawalStatus.PENDING else ""
+        lines.append(f"#{withdrawal.id} - {h(label)} - {withdrawal.points_cost} points{status}")
     withdrawal_text = "\n".join(lines)
     await update.effective_message.reply_text(
         f"{ce('⬇️', Emoji.DOWNLOAD)} <b>Pending Withdrawals</b>\n\n{quote_block(withdrawal_text)}",
         parse_mode=ParseMode.HTML,
     )
+
+
+async def _reserve_approval_delivery(
+    *,
+    db: Database,
+    settings: Settings,
+    withdrawal_id: int,
+    admin_telegram_id: int,
+) -> ApprovalDeliveryPlan:
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            result = await service.reserve_withdrawal_approval(
+                withdrawal_id,
+                admin_telegram_id=admin_telegram_id,
+            )
+            user_telegram_id: int | None = None
+            should_deliver = False
+            if result.withdrawal is not None:
+                user = await session.get(User, result.withdrawal.user_id)
+                user_telegram_id = user.telegram_id if user else None
+                should_deliver = result.withdrawal.status == WithdrawalStatus.RESERVED
+            return ApprovalDeliveryPlan(result, user_telegram_id, should_deliver)
+
+
+async def _send_reserved_code(context: ContextTypes.DEFAULT_TYPE, *, telegram_id: int, code: str) -> None:
+    await context.bot.send_message(
+        chat_id=telegram_id,
+        text=(
+            f"{ce('✔️', Emoji.CHECK)} <b>Your withdrawal was approved.</b>\n\n"
+            f"<b>Google redeem code:</b>\n{code_block(code)}\n"
+            f"{quote_block('Keep this code private and redeem it from your Google account.')}"
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _finalize_approval_delivery(
+    *,
+    db: Database,
+    settings: Settings,
+    withdrawal_id: int,
+    admin_telegram_id: int,
+) -> ApprovalResult:
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            return await service.finalize_reserved_withdrawal(
+                withdrawal_id,
+                admin_telegram_id=admin_telegram_id,
+            )
+
+
+async def _mark_approval_delivery_failed(
+    *,
+    db: Database,
+    settings: Settings,
+    withdrawal_id: int,
+    admin_telegram_id: int,
+    error: TelegramError,
+) -> ApprovalResult:
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            return await service.mark_withdrawal_delivery_failed(
+                withdrawal_id,
+                admin_telegram_id=admin_telegram_id,
+                reason=str(error),
+            )
 
 
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -351,25 +432,33 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     withdrawal_id = int(context.args[0])
     settings = get_settings(context)
     db = get_database(context)
-    async with db.session() as session:
-        async with session.begin():
-            service = RedeemService(session, settings)
-            result = await service.approve_withdrawal(withdrawal_id, admin_telegram_id=update.effective_user.id)
-            user_telegram_id: int | None = None
-            if result.withdrawal is not None:
-                user = await session.get(User, result.withdrawal.user_id)
-                user_telegram_id = user.telegram_id if user else None
+    admin_telegram_id = update.effective_user.id
+    delivery = await _reserve_approval_delivery(
+        db=db,
+        settings=settings,
+        withdrawal_id=withdrawal_id,
+        admin_telegram_id=admin_telegram_id,
+    )
+    result = delivery.result
 
-    if result.success and result.code and user_telegram_id is not None:
-        await context.bot.send_message(
-            chat_id=user_telegram_id,
-            text=(
-                f"{ce('✔️', Emoji.CHECK)} <b>Your withdrawal was approved.</b>\n\n"
-                f"<b>Google redeem code:</b>\n{code_block(result.code)}\n"
-                f"{quote_block('Keep this code private and redeem it from your Google account.')}"
-            ),
-            parse_mode=ParseMode.HTML,
-        )
+    if result.success and result.code and delivery.user_telegram_id is not None and delivery.should_deliver:
+        try:
+            await _send_reserved_code(context, telegram_id=delivery.user_telegram_id, code=result.code)
+        except TelegramError as exc:
+            result = await _mark_approval_delivery_failed(
+                db=db,
+                settings=settings,
+                withdrawal_id=withdrawal_id,
+                admin_telegram_id=admin_telegram_id,
+                error=exc,
+            )
+        else:
+            result = await _finalize_approval_delivery(
+                db=db,
+                settings=settings,
+                withdrawal_id=withdrawal_id,
+                admin_telegram_id=admin_telegram_id,
+            )
     await update.effective_message.reply_text(
         f"{ce('✔️', Emoji.CHECK)} <b>Approval Result</b>\n\n{quote_block(result.message)}",
         parse_mode=ParseMode.HTML,
@@ -418,7 +507,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-def register_admin_handlers(application) -> None:  # type: ignore[no-untyped-def]
+def register_admin_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("admin", admin_menu))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))

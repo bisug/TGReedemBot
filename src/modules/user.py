@@ -3,8 +3,9 @@ from __future__ import annotations
 from telegram import LabeledPrice, Update
 from telegram.error import BadRequest
 from telegram.constants import ParseMode
-from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from src.config import Settings
 from src.helpers.common import (
     answer_callback,
     get_database,
@@ -31,7 +32,7 @@ async def _send_or_edit(update: Update, text: str, **kwargs) -> None:
         await update.effective_message.reply_text(text, **kwargs)
 
 
-def _is_admin(update: Update, settings) -> bool:  # type: ignore[no-untyped-def]
+def _is_admin(update: Update, settings: Settings) -> bool:
     telegram_user = update.effective_user
     return settings.is_admin(telegram_user.id if telegram_user else None)
 
@@ -150,6 +151,42 @@ async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _send_or_edit(update, text, reply_markup=verification_keyboard(settings), parse_mode=ParseMode.HTML)
 
 
+async def _has_required_membership(
+    context: ContextTypes.DEFAULT_TYPE,
+    settings: Settings,
+    telegram_id: int,
+) -> bool:
+    return await has_required_channels(
+        context.bot,
+        settings,
+        telegram_id,
+        cache=get_membership_cache(context),
+    )
+
+
+async def _ensure_verified_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    settings = get_settings(context)
+    db = get_database(context)
+    telegram_user = update.effective_user
+    if telegram_user is None:
+        return False
+
+    if not await _has_required_membership(context, settings, telegram_user.id):
+        await _show_verification(update, context)
+        return False
+
+    async with db.session() as session:
+        async with session.begin():
+            service = RedeemService(session, settings)
+            user = await service.get_or_create_user(
+                telegram_id=telegram_user.id,
+                username=telegram_user.username,
+                first_name=telegram_user.first_name,
+            )
+            await service.mark_verified_and_award(telegram_user.id, user=user)
+    return True
+
+
 async def missing_join_link(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query:
         await update.callback_query.answer(
@@ -200,12 +237,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     referral_telegram_id = parse_referral_arg(context.args)
-    channel_ok = await has_required_channels(
-        context.bot,
-        settings,
-        telegram_user.id,
-        cache=get_membership_cache(context),
-    )
+    channel_ok = await _has_required_membership(context, settings, telegram_user.id)
 
     async with db.session() as session:
         async with session.begin():
@@ -237,25 +269,8 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await enforce_rate_limit(update, context, "verify", limit=6, window_seconds=60):
         return
     await answer_callback(update)
-    settings = get_settings(context)
-    db = get_database(context)
-    telegram_user = update.effective_user
-    if telegram_user is None:
+    if not await _ensure_verified_user(update, context):
         return
-
-    if not await has_required_channels(
-        context.bot,
-        settings,
-        telegram_user.id,
-        cache=get_membership_cache(context),
-    ):
-        await _show_verification(update, context)
-        return
-
-    async with db.session() as session:
-        async with session.begin():
-            service = RedeemService(session, settings)
-            await service.mark_verified_and_award(telegram_user.id)
     await _show_dashboard(update, context)
 
 
@@ -265,6 +280,8 @@ async def dashboard_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await enforce_rate_limit(update, context, "dashboard", limit=30, window_seconds=60):
         return
     await answer_callback(update)
+    if not await _ensure_verified_user(update, context):
+        return
     await _show_dashboard(update, context)
 
 
@@ -341,6 +358,8 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not await enforce_rate_limit(update, context, "referral", limit=20, window_seconds=60):
         return
     await answer_callback(update)
+    if not await _ensure_verified_user(update, context):
+        return
     settings = get_settings(context)
     db = get_database(context)
     telegram_user = update.effective_user
@@ -378,6 +397,8 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not await enforce_rate_limit(update, context, "withdraw", limit=5, window_seconds=60):
         return
     await answer_callback(update)
+    if not await _ensure_verified_user(update, context):
+        return
     settings = get_settings(context)
     db = get_database(context)
     telegram_user = update.effective_user
@@ -416,6 +437,8 @@ async def support_developer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not await enforce_rate_limit(update, context, "support", limit=4, window_seconds=300):
         return
     await answer_callback(update)
+    if not await _ensure_verified_user(update, context):
+        return
     settings = get_settings(context)
     db = get_database(context)
     telegram_user = update.effective_user
@@ -467,12 +490,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             parse_mode=ParseMode.HTML,
         )
         return
-    channel_ok = await has_required_channels(
-        context.bot,
-        settings,
-        telegram_user.id,
-        cache=get_membership_cache(context),
-    )
+    channel_ok = await _has_required_membership(context, settings, telegram_user.id)
 
     async with db.session() as session:
         async with session.begin():
@@ -533,7 +551,7 @@ async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
 
-def register_user_handlers(application) -> None:  # type: ignore[no-untyped-def]
+def register_user_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("claim", claim_command))

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from time import monotonic
 
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 
 from src.database.models import Base
@@ -122,10 +122,7 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
 
     connect_args: dict[str, object] = {}
     if sslmode == "require":
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        connect_args["ssl"] = ssl_context
+        connect_args["ssl"] = ssl.create_default_context()
     elif sslmode == "verify-ca":
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
@@ -140,7 +137,7 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
     return cleaned_url.render_as_string(hide_password=False), connect_args
 
 
-def create_missing_indexes(connection) -> None:  # type: ignore[no-untyped-def]
+def create_missing_indexes(connection: Connection) -> None:
     for table in Base.metadata.tables.values():
         for index in table.indexes:
             index.create(bind=connection, checkfirst=True)

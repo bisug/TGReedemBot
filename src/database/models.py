@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from src.domain import LedgerReason, RedeemCodeStatus, ReferralStatus, StarPaymentStatus, WithdrawalStatus
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -76,7 +78,7 @@ class Referral(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     referrer_user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     referred_user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=ReferralStatus.PENDING, nullable=False)
     awarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
@@ -87,7 +89,7 @@ class Withdrawal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     points_cost: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="pending", index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=WithdrawalStatus.PENDING, index=True, nullable=False)
     redeem_code_id: Mapped[int | None] = mapped_column(ForeignKey("bot_redeem_codes.id"), nullable=True)
     admin_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -103,7 +105,7 @@ class RedeemCode(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="available", index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=RedeemCodeStatus.AVAILABLE, index=True, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_withdrawal_id: Mapped[int | None] = mapped_column(ForeignKey("bot_withdrawals.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -120,7 +122,7 @@ class StarPayment(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("bot_users.id"), index=True, nullable=False)
     invoice_payload: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=StarPaymentStatus.PENDING, nullable=False)
     telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -135,12 +137,12 @@ Index(
 Index(
     "ix_bot_point_ledger_referral_stats",
     PointLedger.user_id,
-    postgresql_where=(PointLedger.reason == "referral_verified") & (PointLedger.points > 0),
+    postgresql_where=(PointLedger.reason == LedgerReason.REFERRAL_VERIFIED) & (PointLedger.points > 0),
 )
 Index(
     "ix_bot_referrals_awarded_referrer",
     Referral.referrer_user_id,
-    postgresql_where=Referral.status == "awarded",
+    postgresql_where=Referral.status == ReferralStatus.AWARDED,
 )
 Index(
     "ix_bot_withdrawals_user_latest",
@@ -151,17 +153,17 @@ Index(
     "ix_bot_withdrawals_pending_user_latest",
     Withdrawal.user_id,
     Withdrawal.id.desc(),
-    postgresql_where=Withdrawal.status == "pending",
+    postgresql_where=Withdrawal.status == WithdrawalStatus.PENDING,
 )
 Index(
     "ix_bot_withdrawals_pending_queue",
     Withdrawal.id,
-    postgresql_where=Withdrawal.status == "pending",
+    postgresql_where=Withdrawal.status == WithdrawalStatus.PENDING,
 )
 Index(
     "ix_bot_redeem_codes_available_queue",
     RedeemCode.id,
-    postgresql_where=RedeemCode.status == "available",
+    postgresql_where=RedeemCode.status == RedeemCodeStatus.AVAILABLE,
 )
 Index(
     "ix_bot_claim_codes_active",
@@ -171,5 +173,5 @@ Index(
 Index(
     "ix_bot_star_payments_paid_amount",
     StarPayment.amount,
-    postgresql_where=StarPayment.status == "paid",
+    postgresql_where=StarPayment.status == StarPaymentStatus.PAID,
 )

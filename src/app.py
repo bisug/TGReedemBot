@@ -10,6 +10,7 @@ from telegram.error import Conflict, TelegramError
 from telegram.ext import Application, ApplicationBuilder, ContextTypes
 
 from src.config import Settings
+from src.core.settings import RequiredChannel
 from src.database import Database
 from src.modules.admin import register_admin_handlers
 from src.modules.payments import register_payment_handlers
@@ -145,7 +146,10 @@ async def _load_required_channel_invites(application: Application) -> None:
     )
 
 
-async def _load_required_channel_invite(application: Application, channel) -> tuple[str | None, str | None]:  # type: ignore[no-untyped-def]
+async def _load_required_channel_invite(
+    application: Application,
+    channel: RequiredChannel,
+) -> tuple[str | None, str | None]:
     generated_label: str | None = None
     generated_link: str | None = None
 

@@ -33,8 +33,6 @@ logs/
 *.pid
 
 # Test, lint, type-check, and coverage caches
-tests/
-test/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

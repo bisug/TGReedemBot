@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Iterable
 
 from dotenv import load_dotenv
 
@@ -156,11 +155,6 @@ class Settings:
 
     def is_admin(self, telegram_id: int | None) -> bool:
         return telegram_id is not None and telegram_id in self.admin_ids
-
-    def public_channel_links(self) -> Iterable[tuple[str, str]]:
-        for channel in self.required_channels():
-            if channel.join_url:
-                yield channel.label, channel.join_url
 
     def required_channels(self) -> tuple[RequiredChannel, ...]:
         channels: list[RequiredChannel] = []

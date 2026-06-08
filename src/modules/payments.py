@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
+from telegram.ext import Application, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from src.helpers.common import get_database, get_settings
 from src.helpers.security import require_private_chat
@@ -64,6 +64,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
-def register_payment_handlers(application) -> None:  # type: ignore[no-untyped-def]
+def register_payment_handlers(application: Application) -> None:
     application.add_handler(PreCheckoutQueryHandler(pre_checkout))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
