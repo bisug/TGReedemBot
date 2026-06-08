@@ -14,7 +14,9 @@ from src.helpers.common import (
     parse_referral_arg,
 )
 from src.helpers.keyboards import back_keyboard, commands_keyboard, dashboard_keyboard, verification_keyboard
+from src.helpers.security import enforce_rate_limit, require_private_chat
 from src.services import RedeemService
+from src.utils.limits import is_valid_claim_code
 from src.utils.ui import Emoji, ce, code_block, h, quote_block
 
 
@@ -118,6 +120,11 @@ def _admin_commands_text() -> str:
 
 
 async def _require_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not await require_private_chat(update):
+        return False
+    if not await enforce_rate_limit(update, context, "admin_callback", limit=30, window_seconds=60):
+        return False
+
     settings = get_settings(context)
     if _is_admin(update, settings):
         await answer_callback(update)
@@ -181,6 +188,11 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "start", limit=8, window_seconds=60):
+        return
+
     settings = get_settings(context)
     db = get_database(context)
     telegram_user = update.effective_user
@@ -220,6 +232,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "verify", limit=6, window_seconds=60):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     db = get_database(context)
@@ -244,11 +260,19 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def dashboard_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "dashboard", limit=30, window_seconds=60):
+        return
     await answer_callback(update)
     await _show_dashboard(update, context)
 
 
 async def help_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "screen", limit=30, window_seconds=60):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     await _send_or_edit(
@@ -260,6 +284,10 @@ async def help_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "screen", limit=30, window_seconds=60):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     is_admin = _is_admin(update, settings)
@@ -272,6 +300,10 @@ async def commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def user_commands_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "screen", limit=30, window_seconds=60):
+        return
     await answer_callback(update)
     await _send_or_edit(
         update,
@@ -304,6 +336,10 @@ async def admin_panel_screen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "referral", limit=20, window_seconds=60):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     db = get_database(context)
@@ -337,6 +373,10 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "withdraw", limit=5, window_seconds=60):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     db = get_database(context)
@@ -371,6 +411,10 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def support_developer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "support", limit=4, window_seconds=300):
+        return
     await answer_callback(update)
     settings = get_settings(context)
     db = get_database(context)
@@ -396,6 +440,11 @@ async def support_developer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "claim", limit=10, window_seconds=60):
+        return
+
     telegram_user = update.effective_user
     if telegram_user is None or update.effective_message is None:
         return
@@ -411,6 +460,13 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     settings = get_settings(context)
     db = get_database(context)
     claim_code = context.args[0]
+    if not is_valid_claim_code(claim_code):
+        await update.effective_message.reply_text(
+            f"{ce('🚪', Emoji.EXIT)} <b>Invalid claim code.</b>\n\n"
+            f"{quote_block('Use only letters, numbers, underscores, and dashes.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
     channel_ok = await has_required_channels(
         context.bot,
         settings,
@@ -449,6 +505,11 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+    if not await enforce_rate_limit(update, context, "help", limit=20, window_seconds=60):
+        return
+
     if update.effective_message is None:
         return
     settings = get_settings(context)
@@ -461,6 +522,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+
     if update.effective_message:
         await update.effective_message.reply_text(
             f"{ce('📲', Emoji.PHONE)} <b>Payment support</b>\n\n"

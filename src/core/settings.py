@@ -46,6 +46,10 @@ def _env_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer") from exc
 
 
+def _bounded_env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    return min(max(_env_int(name, default), minimum), maximum)
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None or raw == "":
@@ -128,9 +132,9 @@ class Settings:
             bot_username=bot_username,
             database_url=database_url,
             required_channel_ids=_parse_channel_ids(os.getenv("REQUIRED_CHANNEL_IDS")),
-            referral_reward_points=_env_int("REFERRAL_REWARD_POINTS", 1),
-            withdraw_cost_points=_env_int("WITHDRAW_COST_POINTS", 5),
-            support_stars_amount=_env_int("SUPPORT_STARS_AMOUNT", 10),
+            referral_reward_points=_bounded_env_int("REFERRAL_REWARD_POINTS", 1, minimum=0, maximum=1000000),
+            withdraw_cost_points=_bounded_env_int("WITHDRAW_COST_POINTS", 5, minimum=1, maximum=1000000),
+            support_stars_amount=_bounded_env_int("SUPPORT_STARS_AMOUNT", 10, minimum=1, maximum=2500),
             telegram_concurrent_updates=max(1, _env_int("TELEGRAM_CONCURRENT_UPDATES", 64)),
             telegram_connection_pool_size=max(1, _env_int("TELEGRAM_CONNECTION_POOL_SIZE", 64)),
             telegram_pool_timeout_seconds=max(1, _env_int("TELEGRAM_POOL_TIMEOUT_SECONDS", 10)),

@@ -22,6 +22,15 @@ from src.database.models import (
     utcnow,
 )
 from src.config import Settings
+from src.utils.limits import (
+    MAX_CLAIM_CODE_LENGTH,
+    MAX_CLAIM_CODE_REDEMPTIONS,
+    MAX_POINTS_PER_CLAIM_CODE,
+    MAX_REDEEM_CODE_LENGTH,
+    MAX_REDEEM_CODES_PER_BATCH,
+    is_valid_claim_code,
+    normalize_claim_code_input,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +208,7 @@ class RedeemService:
 
     @staticmethod
     def normalize_claim_code(code: str) -> str:
-        return code.strip().upper()
+        return normalize_claim_code_input(code)
 
     @staticmethod
     def random_claim_code(length: int = 10) -> str:
@@ -216,10 +225,19 @@ class RedeemService:
     ) -> ClaimCode:
         if points <= 0:
             raise ValueError("points must be greater than 0")
+        if points > MAX_POINTS_PER_CLAIM_CODE:
+            raise ValueError(f"points must be at most {MAX_POINTS_PER_CLAIM_CODE}")
         if max_redemptions <= 0:
             raise ValueError("max_redemptions must be greater than 0")
+        if max_redemptions > MAX_CLAIM_CODE_REDEMPTIONS:
+            raise ValueError(f"max_redemptions must be at most {MAX_CLAIM_CODE_REDEMPTIONS}")
 
         candidate = self.normalize_claim_code(code) if code else ""
+        if candidate and not is_valid_claim_code(candidate):
+            raise ValueError(
+                "claim code may contain only letters, numbers, underscores, and dashes "
+                f"and must be at most {MAX_CLAIM_CODE_LENGTH} characters"
+            )
         for _ in range(20):
             if not candidate:
                 candidate = self.random_claim_code()
@@ -256,6 +274,8 @@ class RedeemService:
         if user is None:
             user = await self.get_or_create_user(telegram_id=telegram_id, username=username, first_name=first_name)
         normalized = self.normalize_claim_code(code)
+        if not is_valid_claim_code(normalized):
+            return ClaimResult(False, 0, "That claim code format is invalid. Please check the code and try again.")
         claim_code = await self.session.scalar(
             select(ClaimCode).where(ClaimCode.code == normalized).with_for_update()
         )
@@ -370,9 +390,9 @@ class RedeemService:
         seen: set[str] = set()
         skipped = 0
 
-        for raw_code in codes:
+        for raw_code in codes[:MAX_REDEEM_CODES_PER_BATCH]:
             code = raw_code.strip()
-            if not code:
+            if not code or len(code) > MAX_REDEEM_CODE_LENGTH:
                 continue
             if code in seen:
                 skipped += 1

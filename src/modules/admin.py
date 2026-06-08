@@ -9,11 +9,26 @@ from telegram.ext import CommandHandler, ContextTypes
 
 from src.database.models import User
 from src.helpers.common import get_database, get_settings
+from src.helpers.security import enforce_rate_limit, require_private_chat
 from src.services import RedeemService
+from src.utils.limits import (
+    MAX_BROADCAST_LENGTH,
+    MAX_CLAIM_CODE_REDEMPTIONS,
+    MAX_POINTS_PER_CLAIM_CODE,
+    MAX_REDEEM_CODES_PER_BATCH,
+    MAX_REJECTION_REASON_LENGTH,
+    clamp_text,
+    is_valid_claim_code,
+)
 from src.utils.ui import Emoji, ce, code_block, h, quote_block
 
 
 async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not await require_private_chat(update):
+        return False
+    if not await enforce_rate_limit(update, context, "admin", limit=40, window_seconds=60):
+        return False
+
     settings = get_settings(context)
     telegram_user = update.effective_user
     if settings.is_admin(telegram_user.id if telegram_user else None):
@@ -110,6 +125,7 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         codes = [line.strip() for line in body.splitlines()]
     else:
         codes = [part.strip() for part in context.args]
+    codes = codes[:MAX_REDEEM_CODES_PER_BATCH]
 
     settings = get_settings(context)
     db = get_database(context)
@@ -165,6 +181,13 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             parse_mode=ParseMode.HTML,
         )
         return
+    if len(body) > MAX_BROADCAST_LENGTH:
+        await update.effective_message.reply_text(
+            f"{ce('🚪', Emoji.EXIT)} <b>Broadcast too long.</b>\n\n"
+            f"{quote_block(f'Keep broadcasts under {MAX_BROADCAST_LENGTH} characters.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
     settings = get_settings(context)
     db = get_database(context)
@@ -202,6 +225,13 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     points = int(context.args[0])
+    if points > MAX_POINTS_PER_CLAIM_CODE:
+        await update.effective_message.reply_text(
+            f"{ce('🚪', Emoji.EXIT)} <b>Invalid points amount.</b>\n\n"
+            f"{quote_block(f'Use {MAX_POINTS_PER_CLAIM_CODE} points or less per claim code.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
     max_redemptions = 1
     custom_code: str | None = None
     if len(context.args) >= 2:
@@ -210,6 +240,20 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             custom_code = context.args[2] if len(context.args) >= 3 else None
         else:
             custom_code = context.args[1]
+    if max_redemptions > MAX_CLAIM_CODE_REDEMPTIONS:
+        await update.effective_message.reply_text(
+            f"{ce('🚪', Emoji.EXIT)} <b>Invalid max uses.</b>\n\n"
+            f"{quote_block(f'Use {MAX_CLAIM_CODE_REDEMPTIONS} uses or fewer per claim code.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if custom_code and not is_valid_claim_code(custom_code):
+        await update.effective_message.reply_text(
+            f"{ce('🚪', Emoji.EXIT)} <b>Invalid custom code.</b>\n\n"
+            f"{quote_block('Use only letters, numbers, underscores, and dashes.')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
     settings = get_settings(context)
     db = get_database(context)
@@ -345,7 +389,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     withdrawal_id = int(context.args[0])
-    reason = " ".join(context.args[1:]).strip() or None
+    reason = clamp_text(" ".join(context.args[1:]), MAX_REJECTION_REASON_LENGTH) or None
     settings = get_settings(context)
     db = get_database(context)
     async with db.session() as session:

@@ -5,6 +5,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from src.helpers.common import get_database, get_settings
+from src.helpers.security import require_private_chat
 from src.services import RedeemService
 from src.utils.ui import Emoji, ce, quote_block
 
@@ -28,6 +29,9 @@ async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await require_private_chat(update):
+        return
+
     message = update.effective_message
     if message is None or message.successful_payment is None:
         return
