@@ -131,7 +131,7 @@ Use a Render PostgreSQL database or any external PostgreSQL provider, then set `
 - `/addcodes` - add codes, one per line after the command.
 - `/codes [all|unused|reserved|used]` - list redeem codes.
 - `/updatecode <old_code> <new_code>` - replace an unused redeem code.
-- `/removecode <code>` - remove an unused redeem code.
+- `/removecode <code_or_id>` - remove an unused redeem code.
 - `/stock` - show inventory counts.
 - `/withdrawals` - list open withdrawal records.
 - `/approve <withdrawal_id>` - retry or manually approve a withdrawal.

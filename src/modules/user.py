@@ -128,7 +128,7 @@ def _admin_commands_text() -> str:
             "/addcodes - Add Google redeem code inventory, one code per line",
             "/codes [all|unused|reserved|used] - List redeem codes",
             "/updatecode <old_code> <new_code> - Replace an unused redeem code",
-            "/removecode <code> - Remove an unused redeem code",
+            "/removecode <code_or_id> - Remove an unused redeem code",
             "/stock - Show redeem code stock counts",
             "/withdrawals - List open withdrawal records",
             "/approve <withdrawal_id> - Retry or manually approve a withdrawal",

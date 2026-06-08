@@ -444,13 +444,28 @@ class RedeemService:
     async def remove_available_code(self, code_value: str) -> tuple[bool, str]:
         code_value = code_value.strip()
         if not code_value:
-            return False, "A redeem code is required."
-        if len(code_value) > MAX_REDEEM_CODE_LENGTH:
+            return False, "A redeem code or code ID is required."
+        is_id_lookup = code_value.startswith("#")
+        lookup_value = code_value[1:] if is_id_lookup else code_value
+        if not lookup_value:
+            return False, "A redeem code or code ID is required."
+        if not is_id_lookup and len(lookup_value) > MAX_REDEEM_CODE_LENGTH:
             return False, f"Redeem codes must be at most {MAX_REDEEM_CODE_LENGTH} characters."
+        if is_id_lookup and not lookup_value.isdigit():
+            return False, "Code IDs must be numeric."
 
-        code = await self.session.scalar(
-            select(RedeemCode).where(RedeemCode.code == code_value).with_for_update()
-        )
+        if is_id_lookup:
+            code = await self.session.scalar(
+                select(RedeemCode).where(RedeemCode.id == int(lookup_value)).with_for_update()
+            )
+        else:
+            code = await self.session.scalar(
+                select(RedeemCode).where(RedeemCode.code == lookup_value).with_for_update()
+            )
+            if code is None and lookup_value.isdigit():
+                code = await self.session.scalar(
+                    select(RedeemCode).where(RedeemCode.id == int(lookup_value)).with_for_update()
+                )
         if code is None:
             return False, "That redeem code was not found."
         if code.status != RedeemCodeStatus.AVAILABLE:

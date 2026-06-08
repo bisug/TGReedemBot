@@ -3,14 +3,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from telegram import Bot, Message, MessageEntity, Update
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageEntity, Update
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TelegramError
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from src.config import Settings
 from src.database import Database
-from src.database.models import User
+from src.database.models import RedeemCode, User
 from src.domain import RedeemCodeStatus, WithdrawalStatus
 from src.helpers.common import get_database, get_settings
 from src.helpers.security import enforce_rate_limit, require_private_chat
@@ -40,6 +40,9 @@ class BroadcastPayload:
     entities: tuple[MessageEntity, ...] = ()
     copy_from_chat_id: int | str | None = None
     copy_message_id: int | None = None
+
+
+CODE_LIST_PAGE_MAX_CHARS = 3200
 
 
 async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -89,16 +92,46 @@ def _chunk_lines(lines: list[str], *, max_chars: int = 3400) -> list[str]:
     return chunks
 
 
-def _code_status_filter(raw_status: str) -> tuple[str | None, str] | None:
+def _code_status_filter(raw_status: str) -> tuple[str | None, str, str] | None:
     aliases = {
-        "all": (None, "all"),
-        "available": (RedeemCodeStatus.AVAILABLE, "unused"),
-        "unused": (RedeemCodeStatus.AVAILABLE, "unused"),
-        "reserved": (RedeemCodeStatus.RESERVED, "reserved"),
-        "sent": (RedeemCodeStatus.SENT, "used"),
-        "used": (RedeemCodeStatus.SENT, "used"),
+        "all": (None, "all", "all"),
+        "available": (RedeemCodeStatus.AVAILABLE, "unused", "unused"),
+        "unused": (RedeemCodeStatus.AVAILABLE, "unused", "unused"),
+        "reserved": (RedeemCodeStatus.RESERVED, "reserved", "reserved"),
+        "sent": (RedeemCodeStatus.SENT, "used", "used"),
+        "used": (RedeemCodeStatus.SENT, "used", "used"),
     }
     return aliases.get(raw_status.lower())
+
+
+def _code_status_icon(status: str) -> str:
+    return "🟢" if status == RedeemCodeStatus.AVAILABLE else "🔴"
+
+
+def _code_status_label(status: str) -> str:
+    if status == RedeemCodeStatus.AVAILABLE:
+        return "unused"
+    if status == RedeemCodeStatus.RESERVED:
+        return "reserved"
+    if status == RedeemCodeStatus.SENT:
+        return "used"
+    return status
+
+
+def _code_list_line(code: RedeemCode) -> str:
+    return f"#{code.id} {_code_status_icon(code.status)} {h(_code_status_label(code.status))} <code>{h(code.code)}</code>"
+
+
+def _code_list_keyboard(*, status_key: str, page: int, total_pages: int) -> InlineKeyboardMarkup | None:
+    if total_pages <= 1:
+        return None
+
+    buttons: list[InlineKeyboardButton] = []
+    if page > 0:
+        buttons.append(InlineKeyboardButton("Back", callback_data=f"admin:codes:{status_key}:{page - 1}"))
+    if page + 1 < total_pages:
+        buttons.append(InlineKeyboardButton("Next", callback_data=f"admin:codes:{status_key}:{page + 1}"))
+    return InlineKeyboardMarkup([buttons]) if buttons else None
 
 
 def _utf16_length(value: str) -> int:
@@ -231,7 +264,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             "/addcodes - Add Google redeem code inventory, one code per line",
             "/codes [all|unused|reserved|used] - List redeem codes",
             "/updatecode <old_code> <new_code> - Replace an unused redeem code",
-            "/removecode <code> - Remove an unused redeem code",
+            "/removecode <code_or_id> - Remove an unused redeem code",
             "/stock - Show redeem code inventory counts",
             "/withdrawals - List open withdrawal records",
             "/approve <withdrawal_id> - Retry or manually approve a withdrawal",
@@ -281,21 +314,28 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await _require_admin(update, context):
-        return
-    raw_status = context.args[0].lower() if context.args else "all"
+async def _show_codes_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    raw_status: str,
+    page: int = 0,
+    edit: bool = False,
+) -> None:
     status_filter = _code_status_filter(raw_status)
     if status_filter is None:
-        await update.effective_message.reply_text(
+        text = (
             f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes</b>\n\n"
             "Please choose one of: all, unused, reserved, used.\n\n"
-            f"<b>Example:</b>\n{code_block('/codes unused')}",
-            parse_mode=ParseMode.HTML,
+            f"<b>Example:</b>\n{code_block('/codes unused')}"
         )
+        if edit and update.callback_query:
+            await update.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML)
+        elif update.effective_message:
+            await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
         return
 
-    status, label = status_filter
+    status, label, status_key = status_filter
     settings = get_settings(context)
     db = get_database(context)
     async with db.session() as session:
@@ -304,25 +344,58 @@ async def codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             rows = await service.list_redeem_codes(status=status)
 
     if not rows:
-        await update.effective_message.reply_text(
+        text = (
             f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes</b>\n\n"
-            f"{quote_block(f'No {label} redeem codes found.')}",
-            parse_mode=ParseMode.HTML,
+            f"{quote_block(f'No {label} redeem codes found.')}"
         )
+        if edit and update.callback_query:
+            await update.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML)
+        elif update.effective_message:
+            await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
         return
 
-    summary = f"Showing {len(rows)} code(s)."
-    lines = [f"#{code.id} [{code.status}] {code.code}" for code in rows]
-    chunks = _chunk_lines(lines)
+    lines = [_code_list_line(code) for code in rows]
+    pages = _chunk_lines(lines, max_chars=CODE_LIST_PAGE_MAX_CHARS)
+    page = max(0, min(page, len(pages) - 1))
+    summary = f"{len(rows)} code(s). Page {page + 1}/{len(pages)}."
+    text = (
+        f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes - {h(label.title())}</b>\n"
+        f"{quote_block(summary)}\n\n"
+        f"{pages[page]}"
+    )
+    reply_markup = _code_list_keyboard(status_key=status_key, page=page, total_pages=len(pages))
 
-    for index, chunk in enumerate(chunks, start=1):
-        page_note = summary if len(chunks) == 1 else f"{summary} Page {index}/{len(chunks)}."
-        await update.effective_message.reply_text(
-            f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Codes - {h(label.title())}</b>\n"
-            f"{quote_block(page_note)}\n\n"
-            f"{quote_block(chunk)}",
+    if edit and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
             parse_mode=ParseMode.HTML,
         )
+    elif update.effective_message:
+        await update.effective_message.reply_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML,
+        )
+
+
+async def codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update, context):
+        return
+    raw_status = context.args[0].lower() if context.args else "all"
+    await _show_codes_page(update, context, raw_status=raw_status)
+
+
+async def codes_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update, context):
+        return
+    query = update.callback_query
+    if query is None or not query.data:
+        return
+    await query.answer()
+    _prefix, _section, raw_status, raw_page = query.data.split(":", maxsplit=3)
+    page = int(raw_page) if raw_page.isdigit() else 0
+    await _show_codes_page(update, context, raw_status=raw_status, page=page, edit=True)
 
 
 async def update_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -358,8 +431,8 @@ async def remove_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if len(context.args) != 1:
         await update.effective_message.reply_text(
             f"{ce('🗑', Emoji.WASTEBASKET)} <b>Remove Redeem Code</b>\n\n"
-            "Please provide one unused redeem code to remove.\n\n"
-            f"<b>Example:</b>\n{code_block('/removecode OLD-CODE')}",
+            "Please provide one unused redeem code or the ID shown in /codes.\n\n"
+            f"<b>Example:</b>\n{code_block('/removecode #42')}",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -744,6 +817,7 @@ def register_admin_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("genpoints", genpoints))
     application.add_handler(CommandHandler("addcodes", add_codes))
     application.add_handler(CommandHandler("codes", codes))
+    application.add_handler(CallbackQueryHandler(codes_page, pattern=r"^admin:codes:(?:all|unused|reserved|used):\d+$"))
     application.add_handler(CommandHandler("updatecode", update_code))
     application.add_handler(CommandHandler("removecode", remove_code))
     application.add_handler(CommandHandler("stock", stock))
