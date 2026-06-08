@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -125,3 +125,51 @@ class StarPayment(Base):
     provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+Index(
+    "ix_bot_users_verified",
+    User.id,
+    postgresql_where=User.is_verified.is_(True),
+)
+Index(
+    "ix_bot_point_ledger_referral_stats",
+    PointLedger.user_id,
+    postgresql_where=(PointLedger.reason == "referral_verified") & (PointLedger.points > 0),
+)
+Index(
+    "ix_bot_referrals_awarded_referrer",
+    Referral.referrer_user_id,
+    postgresql_where=Referral.status == "awarded",
+)
+Index(
+    "ix_bot_withdrawals_user_latest",
+    Withdrawal.user_id,
+    Withdrawal.id.desc(),
+)
+Index(
+    "ix_bot_withdrawals_pending_user_latest",
+    Withdrawal.user_id,
+    Withdrawal.id.desc(),
+    postgresql_where=Withdrawal.status == "pending",
+)
+Index(
+    "ix_bot_withdrawals_pending_queue",
+    Withdrawal.id,
+    postgresql_where=Withdrawal.status == "pending",
+)
+Index(
+    "ix_bot_redeem_codes_available_queue",
+    RedeemCode.id,
+    postgresql_where=RedeemCode.status == "available",
+)
+Index(
+    "ix_bot_claim_codes_active",
+    ClaimCode.id,
+    postgresql_where=ClaimCode.is_active.is_(True),
+)
+Index(
+    "ix_bot_star_payments_paid_amount",
+    StarPayment.amount,
+    postgresql_where=StarPayment.status == "paid",
+)

@@ -32,6 +32,8 @@ class Database:
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_timeout=pool_timeout,
+            pool_recycle=1800,
+            pool_use_lifo=True,
             pool_pre_ping=pool_pre_ping,
             connect_args=connect_args,
         )
@@ -47,6 +49,7 @@ class Database:
     async def init_models(self) -> None:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(create_missing_indexes)
 
     async def healthcheck(self) -> bool:
         async with self.session_factory() as session:
@@ -135,3 +138,9 @@ def prepare_asyncpg_url(database_url: str) -> tuple[str, dict[str, object]]:
 
     cleaned_url = url.set(query=query)
     return cleaned_url.render_as_string(hide_password=False), connect_args
+
+
+def create_missing_indexes(connection) -> None:  # type: ignore[no-untyped-def]
+    for table in Base.metadata.tables.values():
+        for index in table.indexes:
+            index.create(bind=connection, checkfirst=True)

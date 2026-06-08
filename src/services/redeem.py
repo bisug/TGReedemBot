@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, case, func, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,19 +179,22 @@ class RedeemService:
         return user
 
     async def referral_stats(self, user_id: int) -> tuple[int, int]:
-        points = await self.session.scalar(
-            select(func.coalesce(func.sum(PointLedger.points), 0)).where(
+        statement = select(
+            select(func.coalesce(func.sum(PointLedger.points), 0))
+            .where(
                 PointLedger.user_id == user_id,
                 PointLedger.reason == "referral_verified",
                 PointLedger.points > 0,
             )
-        )
-        successful = await self.session.scalar(
-            select(func.count()).select_from(Referral).where(
+            .scalar_subquery(),
+            select(func.count(Referral.id))
+            .where(
                 Referral.referrer_user_id == user_id,
                 Referral.status == "awarded",
             )
+            .scalar_subquery(),
         )
+        points, successful = (await self.session.execute(statement)).one()
         return int(points or 0), int(successful or 0)
 
     @staticmethod
@@ -286,30 +289,28 @@ class RedeemService:
         return ClaimResult(True, claim_code.points, f"Success. {claim_code.points} point(s) were added to your account.")
 
     async def admin_stats(self) -> dict[str, int]:
-        user_stats = await self.session.execute(
-            select(
-                func.count(User.id),
-                func.coalesce(func.sum(case((User.is_verified.is_(True), 1), else_=0)), 0),
-                func.coalesce(func.sum(User.point_balance), 0),
-            )
+        statement = select(
+            select(func.count(User.id)).scalar_subquery(),
+            select(func.count(User.id)).where(User.is_verified.is_(True)).scalar_subquery(),
+            select(func.count(Withdrawal.id)).where(Withdrawal.status == "pending").scalar_subquery(),
+            select(func.count(RedeemCode.id)).where(RedeemCode.status == "available").scalar_subquery(),
+            select(func.count(RedeemCode.id)).where(RedeemCode.status == "sent").scalar_subquery(),
+            select(func.coalesce(func.sum(User.point_balance), 0)).scalar_subquery(),
+            select(func.coalesce(func.sum(StarPayment.amount), 0))
+            .where(StarPayment.status == "paid")
+            .scalar_subquery(),
+            select(func.count(ClaimCode.id)).where(ClaimCode.is_active.is_(True)).scalar_subquery(),
         )
-        total_users, verified_users, total_points = user_stats.one()
-        pending_withdrawals = await self.session.scalar(
-            select(func.count(Withdrawal.id)).where(Withdrawal.status == "pending")
-        )
-        code_stats = await self.session.execute(
-            select(
-                func.coalesce(func.sum(case((RedeemCode.status == "available", 1), else_=0)), 0),
-                func.coalesce(func.sum(case((RedeemCode.status == "sent", 1), else_=0)), 0),
-            )
-        )
-        available_codes, sent_codes = code_stats.one()
-        paid_stars = await self.session.scalar(
-            select(func.coalesce(func.sum(StarPayment.amount), 0)).where(StarPayment.status == "paid")
-        )
-        active_claim_codes = await self.session.scalar(
-            select(func.count(ClaimCode.id)).where(ClaimCode.is_active.is_(True))
-        )
+        (
+            total_users,
+            verified_users,
+            pending_withdrawals,
+            available_codes,
+            sent_codes,
+            total_points,
+            paid_stars,
+            active_claim_codes,
+        ) = (await self.session.execute(statement)).one()
         return {
             "total_users": int(total_users or 0),
             "verified_users": int(verified_users or 0),
