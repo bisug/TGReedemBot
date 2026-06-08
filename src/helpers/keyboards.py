@@ -15,13 +15,13 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
             styled_button(
                 "Withdraw",
                 callback_data="dashboard:withdraw",
-                emoji_id=Emoji.DOWNLOAD,
+                emoji_id=Emoji.CREDIT_CARD,
                 style="primary",
             ),
             styled_button(
                 "Referral",
                 callback_data="dashboard:referral",
-                emoji_id=Emoji.GLOBE,
+                emoji_id=Emoji.PEOPLE_HUGGING,
                 style="success",
             ),
         ],
@@ -29,13 +29,13 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
             styled_button(
                 "Help",
                 callback_data="dashboard:help",
-                emoji_id=Emoji.FOLDER,
+                emoji_id=Emoji.INFO,
                 style="primary",
             ),
             styled_button(
                 "Commands",
                 callback_data="dashboard:commands",
-                emoji_id=Emoji.MENU,
+                emoji_id=Emoji.CLIPBOARD,
                 style="primary",
             ),
         ],
@@ -43,7 +43,7 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
             styled_button(
                 "Support Developer",
                 callback_data="dashboard:support",
-                emoji_id=Emoji.PHONE,
+                emoji_id=Emoji.HEART,
                 style="primary",
             )
         ],
@@ -54,7 +54,7 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
                 styled_button(
                     "Admin Panel",
                     callback_data="dashboard:admin",
-                    emoji_id=Emoji.FOLDER_ALT,
+                    emoji_id=Emoji.GEAR,
                     style="primary",
                 )
             ]
@@ -65,11 +65,11 @@ def dashboard_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
 @lru_cache(maxsize=4)
 def commands_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [styled_button("User Commands", callback_data="commands:user", emoji_id=Emoji.FOLDER, style="primary")]
+        [styled_button("User Commands", callback_data="commands:user", emoji_id=Emoji.DOCUMENT, style="primary")]
     ]
     if is_admin:
         rows.append(
-            [styled_button("Admin Commands", callback_data="commands:admin", emoji_id=Emoji.FOLDER_ALT, style="primary")]
+            [styled_button("Admin Commands", callback_data="commands:admin", emoji_id=Emoji.GEAR, style="primary")]
         )
     rows.append([styled_button("Back", callback_data="dashboard:home", emoji_id=Emoji.BACK, style="primary")])
     return InlineKeyboardMarkup(rows)
@@ -93,7 +93,7 @@ def verification_keyboard(settings: Settings) -> InlineKeyboardMarkup:
                 style="primary",
             )
         rows.append([button])
-    rows.append([styled_button("I joined", callback_data="verify", emoji_id=Emoji.CHECK, style="success")])
+    rows.append([styled_button("I joined", callback_data="verify", emoji_id=Emoji.SUCCESS, style="success")])
     return InlineKeyboardMarkup(rows)
 
 

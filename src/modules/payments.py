@@ -52,13 +52,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if stored is None:
         await message.reply_text(
-            f"{ce('📲', Emoji.PHONE)} <b>Payment needs review</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Payment needs review</b>\n\n"
             f"{quote_block('Payment was received, but I could not match it to an active invoice. Please use /paysupport.')}",
             parse_mode=ParseMode.HTML,
         )
         return
     await message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Payment recorded</b>\n\n"
+        f"{ce('✅', Emoji.SUCCESS)} <b>Payment recorded</b>\n\n"
         f"{quote_block('Thank you for supporting the developer. Your Telegram Stars payment was recorded.')}",
         parse_mode=ParseMode.HTML,
     )

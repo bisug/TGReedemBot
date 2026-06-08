@@ -46,7 +46,7 @@ async def _require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return True
     if update.effective_message:
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} You are not allowed to use admin commands.",
+            f"{ce('🚫', Emoji.PROHIBITED)} You are not allowed to use admin commands.",
             parse_mode=ParseMode.HTML,
         )
     return False
@@ -111,7 +111,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         "/reject <withdrawal_id> [reason] - Reject a request without deducting points"
     )
     await update.effective_message.reply_text(
-        f"{ce('📂', Emoji.FOLDER)} <b>Admin Panel</b>\n\n"
+        f"{ce('⚙️', Emoji.GEAR)} <b>Admin Panel</b>\n\n"
         f"{quote_block('Use these commands to manage users, claim codes, redeem-code stock, and withdrawal requests.')}\n\n"
         f"{commands}",
         parse_mode=ParseMode.HTML,
@@ -125,7 +125,7 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not body:
         example = code_block("/addcodes CODE-ONE\nCODE-TWO\nCODE-THREE")
         await update.effective_message.reply_text(
-            f"{ce('📂', Emoji.FOLDER)} <b>Add Redeem Codes</b>\n\n"
+            f"{ce('➕', Emoji.PLUS)} <b>Add Redeem Codes</b>\n\n"
             "Please send the codes after /addcodes, one code per line.\n\n"
             f"<b>Example:</b>\n{example}",
             parse_mode=ParseMode.HTML,
@@ -147,7 +147,7 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     summary = f"Added: {added}\nSkipped duplicates: {skipped}"
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Inventory updated.</b>\n\n"
+        f"{ce('✅', Emoji.SUCCESS)} <b>Inventory updated.</b>\n\n"
         f"{quote_block(summary)}",
         parse_mode=ParseMode.HTML,
     )
@@ -174,7 +174,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Active claim codes: {values['active_claim_codes']}"
     )
     await update.effective_message.reply_text(
-        f"{ce('🔲', Emoji.MENU)} <b>Bot Statistics</b>\n\n"
+        f"{ce('📊', Emoji.BAR_CHART)} <b>Bot Statistics</b>\n\n"
         f"{quote_block(stats_text)}",
         parse_mode=ParseMode.HTML,
     )
@@ -186,7 +186,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     body = _command_body(update)
     if not body:
         await update.effective_message.reply_text(
-            f"{ce('📲', Emoji.PHONE_ALT)} <b>Broadcast</b>\n\n"
+            f"{ce('🔔', Emoji.BELL)} <b>Broadcast</b>\n\n"
             "Please include the message you want to broadcast.\n\n"
             f"<b>Example:</b>\n{code_block('/broadcast New claim code is live.')}",
             parse_mode=ParseMode.HTML,
@@ -194,7 +194,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if len(body) > MAX_BROADCAST_LENGTH:
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Broadcast too long.</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Broadcast too long.</b>\n\n"
             f"{quote_block(f'Keep broadcasts under {MAX_BROADCAST_LENGTH} characters.')}",
             parse_mode=ParseMode.HTML,
         )
@@ -216,7 +216,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     result_text = f"Sent: {sent}\nFailed: {failed}"
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Broadcast finished.</b>\n\n"
+        f"{ce('✅', Emoji.SUCCESS)} <b>Broadcast finished.</b>\n\n"
         f"{quote_block(result_text)}",
         parse_mode=ParseMode.HTML,
     )
@@ -228,7 +228,7 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args or not context.args[0].isdigit():
         examples = code_block("/genpoints 5\n/genpoints 10 50 BONUS10")
         await update.effective_message.reply_text(
-            f"{ce('📂', Emoji.FOLDER_ALT)} <b>Generate Points Code</b>\n\n"
+            f"{ce('🪙', Emoji.COIN)} <b>Generate Points Code</b>\n\n"
             "Please provide how many points the claim code should give.\n\n"
             f"<b>Examples:</b>\n{examples}",
             parse_mode=ParseMode.HTML,
@@ -238,7 +238,7 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     points = int(context.args[0])
     if points > MAX_POINTS_PER_CLAIM_CODE:
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Invalid points amount.</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Invalid points amount.</b>\n\n"
             f"{quote_block(f'Use {MAX_POINTS_PER_CLAIM_CODE} points or less per claim code.')}",
             parse_mode=ParseMode.HTML,
         )
@@ -253,14 +253,14 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             custom_code = context.args[1]
     if max_redemptions > MAX_CLAIM_CODE_REDEMPTIONS:
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Invalid max uses.</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Invalid max uses.</b>\n\n"
             f"{quote_block(f'Use {MAX_CLAIM_CODE_REDEMPTIONS} uses or fewer per claim code.')}",
             parse_mode=ParseMode.HTML,
         )
         return
     if custom_code and not is_valid_claim_code(custom_code):
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Invalid custom code.</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Invalid custom code.</b>\n\n"
             f"{quote_block('Use only letters, numbers, underscores, and dashes.')}",
             parse_mode=ParseMode.HTML,
         )
@@ -280,14 +280,14 @@ async def genpoints(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
     except ValueError as exc:
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Could not create claim code.</b>\n\n{quote_block(exc)}",
+            f"{ce('❌', Emoji.CROSS)} <b>Could not create claim code.</b>\n\n{quote_block(exc)}",
             parse_mode=ParseMode.HTML,
         )
         return
 
     redeem_hint = f"Users can redeem it with /claim {claim_code.code}"
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Points claim code created.</b>\n\n"
+        f"{ce('✅', Emoji.SUCCESS)} <b>Points claim code created.</b>\n\n"
         f"Code: <code>{h(claim_code.code)}</code>\n"
         f"Points: {claim_code.points}\n"
         f"Max uses: {claim_code.max_redemptions}\n\n"
@@ -312,7 +312,7 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Sent: {counts.get('sent', 0)}"
     )
     await update.effective_message.reply_text(
-        f"{ce('📂', Emoji.FOLDER)} <b>Redeem Code Stock</b>\n\n"
+        f"{ce('🗄', Emoji.FILE_CABINET)} <b>Redeem Code Stock</b>\n\n"
         f"{quote_block(stock_text)}",
         parse_mode=ParseMode.HTML,
     )
@@ -330,7 +330,7 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if not rows:
         await update.effective_message.reply_text(
-            f"{ce('✔️', Emoji.CHECK)} <b>Pending Withdrawals</b>\n\n"
+            f"{ce('⏰', Emoji.ALARM)} <b>Pending Withdrawals</b>\n\n"
             f"{quote_block('There are no pending withdrawal requests.')}",
             parse_mode=ParseMode.HTML,
         )
@@ -343,7 +343,7 @@ async def withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         lines.append(f"#{withdrawal.id} - {h(label)} - {withdrawal.points_cost} points{status}")
     withdrawal_text = "\n".join(lines)
     await update.effective_message.reply_text(
-        f"{ce('⬇️', Emoji.DOWNLOAD)} <b>Pending Withdrawals</b>\n\n{quote_block(withdrawal_text)}",
+        f"{ce('⏰', Emoji.ALARM)} <b>Pending Withdrawals</b>\n\n{quote_block(withdrawal_text)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -375,7 +375,7 @@ async def _send_reserved_code(context: ContextTypes.DEFAULT_TYPE, *, telegram_id
     await context.bot.send_message(
         chat_id=telegram_id,
         text=(
-            f"{ce('✔️', Emoji.CHECK)} <b>Your withdrawal was approved.</b>\n\n"
+            f"{ce('✅', Emoji.SUCCESS)} <b>Your withdrawal was approved.</b>\n\n"
             f"<b>Google redeem code:</b>\n{code_block(code)}\n"
             f"{quote_block('Keep this code private and redeem it from your Google account.')}"
         ),
@@ -422,7 +422,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not context.args or not context.args[0].isdigit():
         await update.effective_message.reply_text(
-            f"{ce('✔️', Emoji.CHECK)} <b>Approve Withdrawal</b>\n\n"
+            f"{ce('✅', Emoji.SUCCESS)} <b>Approve Withdrawal</b>\n\n"
             "Please provide a withdrawal ID.\n\n"
             f"<b>Example:</b>\n{code_block('/approve 12')}",
             parse_mode=ParseMode.HTML,
@@ -460,7 +460,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 admin_telegram_id=admin_telegram_id,
             )
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Approval Result</b>\n\n{quote_block(result.message)}",
+        f"{ce('✅', Emoji.SUCCESS)} <b>Approval Result</b>\n\n{quote_block(result.message)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -470,7 +470,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not context.args or not context.args[0].isdigit():
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Reject Withdrawal</b>\n\n"
+            f"{ce('❌', Emoji.CROSS)} <b>Reject Withdrawal</b>\n\n"
             "Please provide a withdrawal ID.\n\n"
             f"<b>Example:</b>\n{code_block('/reject 12 Not enough valid activity')}",
             parse_mode=ParseMode.HTML,
@@ -498,11 +498,11 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             message += f"\nReason: {reason}"
         await context.bot.send_message(
             chat_id=user_telegram_id,
-            text=f"{ce('🚪', Emoji.EXIT)} <b>Withdrawal Rejected</b>\n\n{quote_block(message)}",
+            text=f"{ce('❌', Emoji.CROSS)} <b>Withdrawal Rejected</b>\n\n{quote_block(message)}",
             parse_mode=ParseMode.HTML,
         )
     await update.effective_message.reply_text(
-        f"{ce('🚪', Emoji.EXIT)} <b>Rejection Result</b>\n\n{quote_block(result.message)}",
+        f"{ce('❌', Emoji.CROSS)} <b>Rejection Result</b>\n\n{quote_block(result.message)}",
         parse_mode=ParseMode.HTML,
     )
 

@@ -39,18 +39,18 @@ def _is_admin(update: Update, settings: Settings) -> bool:
 
 def _help_text(*, is_admin: bool) -> str:
     lines = [
-        f"{ce('📂', Emoji.FOLDER)} <b>Help</b>",
+        f"{ce('ℹ️', Emoji.INFO)} <b>Help</b>",
         "",
         quote_block(
             "Earn points from verified referrals and claim codes. Use your points to request Google redeem codes."
         ),
         "",
         "<b>What you can do:</b>",
-        f"{ce('✔️', Emoji.CHECK)} Verify required channels",
-        f"{ce('🌐', Emoji.GLOBE)} Share your referral link",
-        f"{ce('📂', Emoji.FOLDER)} Claim admin points codes",
-        f"{ce('⬇️', Emoji.DOWNLOAD)} Request a redeem code withdrawal",
-        f"{ce('📲', Emoji.PHONE)} Support the developer with Telegram Stars",
+        f"{ce('✅', Emoji.SUCCESS)} Verify required channels",
+        f"{ce('🔗', Emoji.LINK)} Share your referral link",
+        f"{ce('🪙', Emoji.COIN)} Claim admin points codes",
+        f"{ce('💳', Emoji.CREDIT_CARD)} Request a redeem code withdrawal",
+        f"{ce('❤️', Emoji.HEART)} Support the developer with Telegram Stars",
         "",
         "Use the Commands button to see exact command formats.",
     ]
@@ -58,7 +58,7 @@ def _help_text(*, is_admin: bool) -> str:
         lines.extend(
             [
                 "",
-                f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin access enabled</b>",
+                f"{ce('⚙️', Emoji.GEAR)} <b>Admin access enabled</b>",
                 quote_block("Open the Admin Panel from the dashboard to manage stock, users, and withdrawals."),
             ]
         )
@@ -67,21 +67,21 @@ def _help_text(*, is_admin: bool) -> str:
 
 def _commands_intro_text(*, is_admin: bool) -> str:
     lines = [
-        f"{ce('🔲', Emoji.MENU)} <b>Commands</b>",
+        f"{ce('📋', Emoji.CLIPBOARD)} <b>Commands</b>",
         "",
         quote_block("Choose a command section below. Admin commands are visible only to configured admins."),
         "",
-        f"{ce('📂', Emoji.FOLDER)} User Commands - available to everyone",
+        f"{ce('📄', Emoji.DOCUMENT)} User Commands - available to everyone",
     ]
     if is_admin:
-        lines.append(f"{ce('📂', Emoji.FOLDER_ALT)} Admin Commands - visible only to configured admins")
+        lines.append(f"{ce('⚙️', Emoji.GEAR)} Admin Commands - visible only to configured admins")
     return "\n".join(lines)
 
 
 def _user_commands_text() -> str:
     return "\n".join(
         [
-            f"{ce('📂', Emoji.FOLDER)} <b>User Commands</b>",
+            f"{ce('📄', Emoji.DOCUMENT)} <b>User Commands</b>",
             "",
             code_block(
                 "/start - Open the dashboard\n"
@@ -91,11 +91,11 @@ def _user_commands_text() -> str:
             ),
             "",
             "<b>Dashboard buttons:</b>",
-            f"{ce('⬇️', Emoji.DOWNLOAD)} Withdraw - Request a Google redeem code",
-            f"{ce('🌐', Emoji.GLOBE)} Referral - Get your invite link and stats",
-            f"{ce('📲', Emoji.PHONE)} Support Developer - Send Telegram Stars support",
-            f"{ce('📂', Emoji.FOLDER)} Help - Learn how the bot works",
-            f"{ce('🔲', Emoji.MENU)} Commands - View user/admin command sections",
+            f"{ce('💳', Emoji.CREDIT_CARD)} Withdraw - Request a Google redeem code",
+            f"{ce('🫂', Emoji.PEOPLE_HUGGING)} Referral - Get your invite link and stats",
+            f"{ce('❤️', Emoji.HEART)} Support Developer - Send Telegram Stars support",
+            f"{ce('ℹ️', Emoji.INFO)} Help - Learn how the bot works",
+            f"{ce('📋', Emoji.CLIPBOARD)} Commands - View user/admin command sections",
         ]
     )
 
@@ -103,7 +103,7 @@ def _user_commands_text() -> str:
 def _admin_commands_text() -> str:
     return "\n".join(
         [
-            f"{ce('📂', Emoji.FOLDER_ALT)} <b>Admin Commands</b>",
+            f"{ce('⚙️', Emoji.GEAR)} <b>Admin Commands</b>",
             "",
             code_block(
                 "/admin - Show the admin menu\n"
@@ -142,12 +142,12 @@ async def _show_verification(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"{index}. {channel.label}" for index, channel in enumerate(settings.required_channels(), start=1)
         )
         text = (
-            f"{ce('✔️', Emoji.CHECK)} <b>Verification Required</b>\n\n"
+            f"{ce('✅', Emoji.SUCCESS)} <b>Verification Required</b>\n\n"
             f"{quote_block('Join every required chat below, then press I joined so I can verify your membership.')}\n\n"
             f"<b>Required channel(s):</b>\n{quote_block(channel_lines)}"
         )
     else:
-        text = f"{ce('✔️', Emoji.CHECK)} <b>Verification</b>\n\nPress I joined to continue to your dashboard."
+        text = f"{ce('✅', Emoji.SUCCESS)} <b>Verification</b>\n\nPress I joined to continue to your dashboard."
     await _send_or_edit(update, text, reply_markup=verification_keyboard(settings), parse_mode=ParseMode.HTML)
 
 
@@ -211,7 +211,7 @@ async def _show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE, *,
             )
             points = user.point_balance
     dashboard_text = (
-        f"{ce('🔲', Emoji.MENU)} <b>Redeem Code Dashboard</b>\n\n"
+        f"{ce('💎', Emoji.DIAMOND)} <b>Redeem Code Dashboard</b>\n\n"
         f"<b>Available points:</b> {points}\n"
         f"<b>Withdrawal requirement:</b> {settings.withdraw_cost_points} points\n\n"
         f"{quote_block('Earn points from referrals and claim codes. When you have enough points, request a Google redeem code.')}\n\n"
@@ -259,7 +259,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         update,
         context,
         intro=(
-            f"{ce('🔲', Emoji.MENU)} <b>Welcome to Redeem Code Bot</b>\n\n"
+            f"{ce('💎', Emoji.DIAMOND)} <b>Welcome to Redeem Code Bot</b>\n\n"
             f"{quote_block('Use the dashboard below to check points, invite friends, request withdrawals, view help, or open commands.')}"
         ),
     )
@@ -381,7 +381,7 @@ async def referral_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _send_or_edit(
         update,
         (
-            f"{ce('🌐', Emoji.GLOBE)} <b>Referral Program</b>\n\n"
+            f"{ce('🫂', Emoji.PEOPLE_HUGGING)} <b>Referral Program</b>\n\n"
             f"<b>Referral points:</b> {referral_points}\n"
             f"<b>Successful referrals:</b> {successful_referrals}\n\n"
             f"{quote_block('Share this link with friends. You earn points after they start the bot and pass channel verification.')}\n\n"
@@ -422,7 +422,7 @@ async def withdraw_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _send_or_edit(
         update,
         (
-            f"{ce('⬇️', Emoji.DOWNLOAD)} <b>Withdraw Google Redeem Code</b>\n\n"
+            f"{ce('💳', Emoji.CREDIT_CARD)} <b>Withdraw Google Redeem Code</b>\n\n"
             f"<b>Available points:</b> {points}\n"
             f"<b>Required points:</b> {settings.withdraw_cost_points}\n"
             f"<b>Withdrawal status:</b> {h(status)}\n\n"
@@ -475,7 +475,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if not context.args:
         await update.effective_message.reply_text(
-            f"{ce('📂', Emoji.FOLDER)} <b>Claim Points</b>\n\n"
+            f"{ce('🪙', Emoji.COIN)} <b>Claim Points</b>\n\n"
             "Please send the code you want to claim.\n\n"
             f"<b>Example:</b>\n{code_block('/claim BONUS10')}",
             parse_mode=ParseMode.HTML,
@@ -487,7 +487,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     claim_code = context.args[0]
     if not is_valid_claim_code(claim_code):
         await update.effective_message.reply_text(
-            f"{ce('🚪', Emoji.EXIT)} <b>Invalid claim code.</b>\n\n"
+            f"{ce('⚠️', Emoji.WARNING)} <b>Invalid claim code.</b>\n\n"
             f"{quote_block('Use only letters, numbers, underscores, and dashes.')}",
             parse_mode=ParseMode.HTML,
         )
@@ -519,7 +519,7 @@ async def claim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     result_message = result.message if result else "Claim failed. Please try again."
     await update.effective_message.reply_text(
-        f"{ce('✔️', Emoji.CHECK)} <b>Claim Result</b>\n\n{quote_block(result_message)}",
+        f"{ce('✅', Emoji.SUCCESS)} <b>Claim Result</b>\n\n{quote_block(result_message)}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -547,7 +547,7 @@ async def pay_support(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
 
     if update.effective_message:
         await update.effective_message.reply_text(
-            f"{ce('📲', Emoji.PHONE)} <b>Payment support</b>\n\n"
+            f"{ce('🎧', Emoji.HEADPHONES)} <b>Payment support</b>\n\n"
             f"{quote_block('If you had a problem with a Telegram Stars payment, send the admin your issue details, payment date, and Telegram charge ID if it is visible in your receipt.')}",
             parse_mode=ParseMode.HTML,
         )
